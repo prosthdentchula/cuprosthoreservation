@@ -320,7 +320,7 @@ const go = async () => {
           </div>
           <div style={{ marginBottom:14 }}>
             <label style={lblStyle}>ชื่อผู้ใช้</label>
-            <input style={inpStyle} value={username} onChange={e=>setUser(e.target.value)} placeholder={role==="student"?"เช่น 65710048323":role==="admin"?"admin":"เช่น siriporn"} />
+            <input style={inpStyle} value={username} onChange={e=>setUser(e.target.value)} placeholder={role==="student"?"รหัสประจำตัวนิสิต 10 หลัก":role==="admin"?"admin":"เช่น siriporn"} />
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={lblStyle}>รหัสผ่าน</label>
