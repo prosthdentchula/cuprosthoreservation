@@ -424,6 +424,101 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   );
 }
 
+/* ═══ DAY SUMMARY PANEL (student view-only) ═══════════════════════════════════════
+   Shows a compact, always-visible table of all bookings for the selected date+session.
+   No clicks required — replaces the "click unit to see info" pattern.               */
+function DaySummaryPanel({ reservations, units, advisors, date, session, sessionAdvisors, currentUserId }) {
+  const key    = `${date}__${session}`;
+  const advIds = sessionAdvisors[key] || ["","",""];
+
+  const booked = reservations.filter(r =>
+    r.date === date && r.session === session && r.status !== "cancelled"
+  ).sort((a,b) => a.unitId - b.unitId);
+
+  const zoneLabel = ["A","B","C"];
+
+  return (
+    <div style={{ marginBottom:24 }}>
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+        <span style={{ fontSize:13, fontWeight:700, color:C.accent, textTransform:"uppercase", letterSpacing:0.8 }}>
+          📋 สรุปการจองวันนี้
+        </span>
+        <div style={{ flex:1, height:1, background:C.line }} />
+        <span style={{ fontSize:12, color:C.muted, background:C.soft, borderRadius:99, padding:"3px 10px", border:`1px solid ${C.line}` }}>
+          {booked.length} / {units.filter(u=>u.status==="active").length} ยูนิต
+        </span>
+      </div>
+
+      {booked.length === 0 ? (
+        <div style={{ background:"#fff", border:`1px solid ${C.line}`, borderRadius:10, padding:"20px 16px", textAlign:"center", color:C.faint, fontSize:13 }}>
+          ยังไม่มีการจองสำหรับช่วงเวลานี้
+        </div>
+      ) : (
+        <div style={{ background:"#fff", border:`1px solid ${C.line}`, borderRadius:10, overflow:"hidden" }}>
+          {/* Table header */}
+          <div style={{ display:"grid", gridTemplateColumns:"90px 46px 1fr 1fr 1fr", gap:"0 10px", padding:"8px 14px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+            {["ยูนิต","โซน","นิสิต","ผู้ป่วย / HN","การรักษา"].map(h => (
+              <span key={h} style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</span>
+            ))}
+          </div>
+
+          {/* Rows */}
+          {booked.map((r, idx) => {
+            const unit = units.find(u => u.id === r.unitId);
+            const zIdx = unit?.zoneIdx ?? 0;
+            const adv  = advisors.find(a => a.id === advIds[zIdx]);
+            const isMe = r.studentId === currentUserId;
+            return (
+              <div key={r.id}
+                style={{
+                  display:"grid", gridTemplateColumns:"90px 46px 1fr 1fr 1fr",
+                  gap:"0 10px", padding:"10px 14px",
+                  background: isMe ? C.accentLight : idx%2===0 ? "#fff" : "#fafafa",
+                  borderBottom: idx < booked.length-1 ? `1px solid ${C.line}` : "none",
+                  alignItems:"center",
+                }}>
+                {/* Unit */}
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
+                  <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
+                  {r.isGhost && <span style={{ fontSize:11 }}>👻</span>}
+                  {r.overbooked && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
+                </div>
+                {/* Zone */}
+                <span style={{ fontSize:12, color:C.muted, fontWeight:500 }}>
+                  {zoneLabel[zIdx]}{adv ? <span title={adv.name} style={{ marginLeft:2, cursor:"default" }}>*</span> : ""}
+                </span>
+                {/* Student name */}
+                <span style={{ fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.studentName}</span>
+                {/* Patient / HN */}
+                <div style={{ overflow:"hidden" }}>
+                  <div style={{ fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.patientName}</div>
+                  <div style={{ fontSize:11, color:C.muted }}>{r.hn}</div>
+                </div>
+                {/* Treatment */}
+                <span style={{ fontSize:12.5, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.treatment}>{r.treatment}</span>
+              </div>
+            );
+          })}
+
+          {/* Zone advisor legend */}
+          <div style={{ padding:"8px 14px", background:C.soft, borderTop:`1px solid ${C.line}`, display:"flex", gap:16, flexWrap:"wrap" }}>
+            {[0,1,2].map(z => {
+              const adv = advisors.find(a => a.id === advIds[z]);
+              return adv ? (
+                <span key={z} style={{ fontSize:11.5, color:C.muted }}>
+                  <strong style={{ color:C.ink }}>Zone {zoneLabel[z]}*</strong> {adv.name}
+                </span>
+              ) : null;
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══ BROWSE PAGE ════════════════════════════════════════════════════════════════ */
 function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBook }) {
   const [date, setDate]     = useState(next14Days[0]);
@@ -516,6 +611,18 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
           <span style={{ fontSize:13, color:C.amber, background:C.amberBg, borderRadius:8, padding:"6px 12px" }}>● {totalBooked} จองแล้ว</span>
         </div>
       </div>
+
+      {isStudent && sessions.includes(session) && (
+        <DaySummaryPanel
+          reservations={reservations}
+          units={units}
+          advisors={advisors}
+          date={date}
+          session={session}
+          sessionAdvisors={sessionAdvisors}
+          currentUserId={user.id}
+        />
+      )}
 
       {sessions.includes(session) ? [0,1,2].map(z=>{
         const zUnits = units.filter(u=>u.zoneIdx===z);
