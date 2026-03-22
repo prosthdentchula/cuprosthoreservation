@@ -3,7 +3,7 @@
  */
 
 // ── CONFIG ───────────────────────────────────────────────────────────────────
-export const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyhmz82fotkfTaOlBZMTwmEDEDes8oJXCCh9sjp0DRQp6c4yyeWuICdMV7ef1K5U2mR/exec";
+export const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyjV5ZDUP7PGDKjVjhprqUIUwP_0tuMQdB1Y_5UFtybc5I6RlxC-PIpnOiVYUuQ7ZbA/exec";
 
 /**
  * Dummy function to keep App.jsx happy!
