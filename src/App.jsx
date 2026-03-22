@@ -612,18 +612,6 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
         </div>
       </div>
 
-      {isStudent && sessions.includes(session) && (
-        <DaySummaryPanel
-          reservations={reservations}
-          units={units}
-          advisors={advisors}
-          date={date}
-          session={session}
-          sessionAdvisors={sessionAdvisors}
-          currentUserId={user.id}
-        />
-      )}
-
       {sessions.includes(session) ? [0,1,2].map(z=>{
         const zUnits = units.filter(u=>u.zoneIdx===z);
         const adv    = advisors.find(a=>a.id===advIds[z]);
@@ -672,6 +660,18 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
           <div style={{ fontSize:38, marginBottom:10 }}>🚫</div>
           <p style={{ margin:0 }}>วันพุธไม่มีช่วงบ่าย</p>
         </div>
+      )}
+
+      {isOverview && sessions.includes(session) && (
+        <DaySummaryPanel
+          reservations={reservations}
+          units={units}
+          advisors={advisors}
+          date={date}
+          session={session}
+          sessionAdvisors={sessionAdvisors}
+          currentUserId={user.id}
+        />
       )}
 
       {target&&canBook&&(
