@@ -900,31 +900,38 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
       .sort((a, b) => a.id - b.id);
 
     const unitRows = allZoneUnits.map(unit => {
-      const booking = zoneRows.find(r => r.unitId === unit.id);
+      const bookingsForUnit = zoneRows.filter(r => r.unitId === unit.id);
       const isMaint = unit.status === "maintenance";
       if (isMaint) {
         return `<tr style="background:#f4f5f7;color:#9ca3af">
-          <td style="padding:6px 10px;font-weight:600">${unit.name}</td>
-          <td colspan="5" style="padding:6px 10px;font-style:italic">ซ่อมบำรุง</td>
-          <td style="padding:6px 10px;text-align:center">—</td>
+          <td style="padding:3px 8px;font-weight:600">${unit.name}</td>
+          <td colspan="5" style="padding:3px 8px;font-style:italic">ซ่อมบำรุง</td>
+          <td style="padding:3px 8px;text-align:center">—</td>
         </tr>`;
       }
-      if (!booking) {
+      if (bookingsForUnit.length === 0) {
         return `<tr style="color:#9ca3af">
-          <td style="padding:6px 10px;font-weight:600">${unit.name}</td>
-          <td colspan="5" style="padding:6px 10px">ว่าง</td>
-          <td style="padding:6px 10px;text-align:center">—</td>
+          <td style="padding:3px 8px;font-weight:600">${unit.name}</td>
+          <td colspan="5" style="padding:3px 8px">ว่าง</td>
+          <td style="padding:3px 8px;text-align:center">—</td>
         </tr>`;
       }
-      const overStyle = booking.overbooked ? "background:#fef3c7;" : "";
-      return `<tr style="${overStyle}border-bottom:1px solid #e5e7eb">
-        <td style="padding:6px 10px;font-weight:600">${unit.name}</td>
-        <td style="padding:6px 10px">${booking.studentName}</td>
-        <td style="padding:6px 10px">${booking.patientName}</td>
-        <td style="padding:6px 10px">${booking.hn}</td>
-        <td style="padding:6px 10px">${booking.treatment}</td>
-        <td style="padding:6px 10px;text-align:center">${booking.overbooked ? "⚠ Over" : "✓"}</td>
-      </tr>`;
+      return bookingsForUnit.map((booking, idx) => {
+        const isFirst = idx === 0;
+        const isOver  = bookingsForUnit.length > 1;
+        const rowBg   = isOver ? "background:#fef3c7;" : "";
+        const unitCell = isFirst
+          ? `<td style="padding:3px 8px;font-weight:600;${isOver ? "border-top:2px solid #fcd34d;" : ""}" rowspan="${bookingsForUnit.length}">${unit.name}${isOver ? `<br><span style="font-size:6.5pt;color:#92400e;font-weight:700">⚠ OVER×${bookingsForUnit.length}</span>` : ""}</td>`
+          : "";
+        return `<tr style="${rowBg}border-bottom:1px solid #e5e7eb">
+          ${unitCell}
+          <td style="padding:3px 8px">${booking.studentName}</td>
+          <td style="padding:3px 8px">${booking.patientName}</td>
+          <td style="padding:3px 8px">${booking.hn}</td>
+          <td style="padding:3px 8px">${booking.treatment}</td>
+          <td style="padding:3px 8px;text-align:center">${isOver ? "⚠" : "✓"}</td>
+        </tr>`;
+      }).join("");
     }).join("");
 
     const booked = zoneRows.length;
