@@ -946,12 +946,12 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         </div>
         <table>
           <thead><tr>
-            <th style="width:70px">ยูนิต</th>
-            <th style="width:150px">นิสิต</th>
-            <th style="width:160px">ผู้ป่วย</th>
-            <th style="width:100px">HN</th>
+            <th style="width:58px">ยูนิต</th>
+            <th style="width:120px">นิสิต</th>
+            <th style="width:110px">ผู้ป่วย</th>
+            <th style="width:80px">HN</th>
             <th>การรักษา / หัตถการ</th>
-            <th style="width:55px;text-align:center">สถานะ</th>
+            <th style="width:44px;text-align:center">สถานะ</th>
           </tr></thead>
           <tbody>${unitRows}</tbody>
         </table>
@@ -962,50 +962,50 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     <meta charset="utf-8">
     <title>CUProstho — ${printDate} ${sessionLabel}</title>
     <style>
-      @page { size: A4 landscape; margin: 11mm 13mm; }
+      @page { size: A4 portrait; margin: 10mm 12mm; }
       * { box-sizing: border-box; }
-      body { font-family: 'Sarabun', Arial, sans-serif; font-size: 10pt; color: #16191f; margin:0; }
+      body { font-family: 'Sarabun', Arial, sans-serif; font-size: 8.5pt; color: #16191f; margin:0; }
 
       /* ── Document header ── */
       .doc-header { display:flex; justify-content:space-between; align-items:center;
-                    border-bottom:2.5px solid #16191f; padding-bottom:9px; margin-bottom:14px; }
-      .doc-title h1 { font-size:14pt; font-weight:700; margin:0 0 2px; }
-      .doc-title p  { font-size:9.5pt; color:#6b7280; margin:0; }
-      .doc-summary  { display:flex; gap:12px; }
-      .sum-box { background:#f4f5f7; border-radius:5px; padding:5px 16px; text-align:center; min-width:64px; }
-      .sum-box strong { display:block; font-size:16pt; line-height:1.1; font-weight:700; }
-      .sum-box span   { font-size:8pt; color:#6b7280; }
+                    border-bottom:2px solid #16191f; padding-bottom:6px; margin-bottom:8px; }
+      .doc-title h1 { font-size:12pt; font-weight:700; margin:0 0 1px; }
+      .doc-title p  { font-size:8pt; color:#6b7280; margin:0; }
+      .doc-summary  { display:flex; gap:8px; }
+      .sum-box { background:#f4f5f7; border-radius:4px; padding:3px 10px; text-align:center; min-width:52px; }
+      .sum-box strong { display:block; font-size:13pt; line-height:1.1; font-weight:700; }
+      .sum-box span   { font-size:7pt; color:#6b7280; }
 
       /* ── Zone blocks — stacked vertically, one per advisor ── */
-      .zone-block { margin-bottom:14px; break-inside:avoid; }
+      .zone-block { margin-bottom:8px; break-inside:avoid; }
 
-      /* ── Advisor section header (the prominent part) ── */
+      /* ── Advisor section header ── */
       .zone-header {
         background:#16191f; color:#fff;
-        padding:9px 14px;
-        border-radius:6px 6px 0 0;
-        display:flex; align-items:center; gap:14px;
+        padding:5px 10px;
+        border-radius:5px 5px 0 0;
+        display:flex; align-items:center; gap:10px;
       }
-      .adv-name  { font-size:12pt; font-weight:700; flex:1; letter-spacing:0.2px; }
-      .zone-tag  { font-size:8.5pt; opacity:0.65; white-space:nowrap; }
-      .zone-stats { display:flex; gap:5px; }
-      .stat-pill  { border-radius:99px; padding:2px 9px; font-size:8pt; font-weight:600; white-space:nowrap; }
+      .adv-name  { font-size:9.5pt; font-weight:700; flex:1; letter-spacing:0.2px; }
+      .zone-tag  { font-size:7.5pt; opacity:0.65; white-space:nowrap; }
+      .zone-stats { display:flex; gap:4px; }
+      .stat-pill  { border-radius:99px; padding:1px 7px; font-size:7pt; font-weight:600; white-space:nowrap; }
       .stat-booked { background:#344e78; color:#fff; }
       .stat-avail  { background:#d1fae5; color:#065f46; }
       .stat-over   { background:#fef3c7; color:#92400e; }
 
       /* ── Booking table ── */
-      table { width:100%; border-collapse:collapse; font-size:9pt; border:1px solid #e5e7eb; border-top:none; }
+      table { width:100%; border-collapse:collapse; font-size:8pt; border:1px solid #e5e7eb; border-top:none; }
       thead tr { background:#f9fafb; }
-      th { padding:5px 10px; text-align:left; font-weight:600; font-size:8pt;
+      th { padding:3px 8px; text-align:left; font-weight:600; font-size:7pt;
            text-transform:uppercase; letter-spacing:0.3px;
-           border-bottom:1.5px solid #e5e7eb; color:#6b7280; }
-      td { padding:5px 10px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+           border-bottom:1px solid #e5e7eb; color:#6b7280; }
+      td { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
       tr:last-child td { border-bottom:none; }
 
-      .footer { margin-top:10px; font-size:8pt; color:#9ca3af;
+      .footer { margin-top:6px; font-size:7pt; color:#9ca3af;
                 display:flex; justify-content:space-between;
-                border-top:1px solid #e5e7eb; padding-top:6px; }
+                border-top:1px solid #e5e7eb; padding-top:4px; }
     </style>
   </head><body>
     <div class="doc-header">
@@ -1026,7 +1026,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     </div>
   </body></html>`;
 
-  const w = window.open("","_blank","width=1100,height=750");
+  const w = window.open("","_blank","width=800,height=1100");
   w.document.write(html);
   w.document.close();
   w.focus();
@@ -1148,7 +1148,7 @@ function AdminOverview({ reservations, units, advisors, sessionAdvisors }) {
 
       {/* ── Print session summary ── */}
       <div style={{ ...cardStyle, marginBottom:22, padding:"20px 24px" }}>
-        <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600 }}>🖨 พิมพ์สรุปช่วงเวลา (Landscape A4)</h3>
+        <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600 }}>🖨 พิมพ์สรุปช่วงเวลา (Portrait A4)</h3>
         <div style={{ display:"flex", gap:12, alignItems:"flex-end", flexWrap:"wrap" }}>
           <div style={{ flex:1, minWidth:160 }}>
             <label style={lblStyle}>เลือกวัน</label>
