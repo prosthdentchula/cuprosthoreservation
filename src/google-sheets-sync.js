@@ -63,12 +63,13 @@ export function parseAdvisors(rows) {
 
 export function parseStudents(rows) {
   return rows.slice(1).filter((r) => r[0]).map((r) => ({
-    id:       r[0],
-    name:     r[1] || "",
-    username: r[2] || "",
-    password: r[3] || "",
-    program:  r[4] || "MSc",
-    active:   String(r[5] !== "" && r[5] !== undefined ? r[5] : "TRUE").toUpperCase() !== "FALSE",
+    id:         r[0],
+    name:       r[1] || "",
+    username:   r[2] || "",
+    password:   r[3] || "",
+    program:    r[4] || "MSc",
+    enrollYear: r[5] ? Number(r[5]) : null,
+    active:     String(r[6] !== "" && r[6] !== undefined ? r[6] : "TRUE").toUpperCase() !== "FALSE",
   }));
 }
 
@@ -207,13 +208,13 @@ export const SheetsDB = {
     const rows = await apiGet("Students!A:A");
     const rowIdx = rows.findIndex((r) => r[0] === student.id);
     if (rowIdx === -1) throw new Error(`Student ${student.id} not found`);
-    const row = [student.id, student.name, student.username, student.password, student.program, student.active !== false ? "TRUE" : "FALSE"];
-    await apiPut(`Students!A${rowIdx+1}:F${rowIdx+1}`, [row]);
+    const row = [student.id, student.name, student.username, student.password, student.program || "MSc", student.enrollYear || "", student.active !== false ? "TRUE" : "FALSE"];
+    await apiPut(`Students!A${rowIdx+1}:G${rowIdx+1}`, [row]);
   },
 
   async appendStudent(student) {
-    const row = [student.id, student.name, student.username, student.password, student.program || "MSc", "TRUE"];
-    return apiAppend("Students!A:F", [row]);
+    const row = [student.id, student.name, student.username, student.password, student.program || "MSc", student.enrollYear || "", "TRUE"];
+    return apiAppend("Students!A:G", [row]);
   },
 
   async saveUnitStatus(unitId, newStatus) {
