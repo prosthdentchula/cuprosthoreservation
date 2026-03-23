@@ -41,11 +41,11 @@ const SEED_ADVISORS = [
 ];
 
 const SEED_STUDENTS = [
-  { id:"D6001", name:"Ariya Sutthirak",       username:"D6001", password:"1234", program:"MSc",      active:true },
-  { id:"D6002", name:"Pimchanok Lertwattana", username:"D6002", password:"1234", program:"PhD",      active:true },
-  { id:"D6003", name:"Thanakorn Wichit",      username:"D6003", password:"1234", program:"Resident", active:true },
-  { id:"D6004", name:"Lalita Maneechai",      username:"D6004", password:"1234", program:"HigherGrad",active:true},
-  { id:"D6005", name:"Kritsana Boonsong",     username:"D6005", password:"1234", program:"MSc",      active:true },
+  { id:"D6001", name:"Ariya Sutthirak",       username:"D6001", password:"1234", program:"MSc",       enrollYear:2023, active:true },
+  { id:"D6002", name:"Pimchanok Lertwattana", username:"D6002", password:"1234", program:"PhD",       enrollYear:2022, active:true },
+  { id:"D6003", name:"Thanakorn Wichit",      username:"D6003", password:"1234", program:"Resident",  enrollYear:2024, active:true },
+  { id:"D6004", name:"Lalita Maneechai",      username:"D6004", password:"1234", program:"HigherGrad",enrollYear:2023, active:true },
+  { id:"D6005", name:"Kritsana Boonsong",     username:"D6005", password:"1234", program:"MSc",       enrollYear:2024, active:true },
 ];
 
 const SEED_ADMINS = [{ id:"A001", name:"Admin", username:"admin", password:"admin" }];
@@ -84,6 +84,22 @@ const today       = new Date();
 const getLocalISO = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split("T")[0];
 const todayStr    = getLocalISO(today);
 const threeMonthsAgo = new Date(today); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
+const eighteenMonthsAgo = new Date(today); eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth()-18);
+const eighteenMonthsAgoStr = getLocalISO(eighteenMonthsAgo);
+
+/* ── Class Year helper ─────────────────────────────────────────────────────────
+   Academic year advances on August 1 each calendar year.
+   enrollYear = the calendar year the student first enrolled (stored in Sheets).
+   classYear  = how many years have passed since enrolment, counting each Aug 1.
+   Example: enrolled 2023, today = 2025-03-10 → classYear = 3 (Aug 2023→2, Aug 2024→3)
+   ─────────────────────────────────────────────────────────────────────────── */
+function getClassYear(enrollYear) {
+  if (!enrollYear) return null;
+  const yr  = today.getFullYear();
+  const aug1 = new Date(yr, 7, 1); // August 1 of current calendar year
+  const academicYear = today >= aug1 ? yr : yr - 1; // current academic year start
+  return academicYear - Number(enrollYear) + 1;
+}
 const next14Days  = Array.from({length:21},(_,i)=>{ const d=new Date(today); d.setDate(d.getDate()+i); return getLocalISO(d); }).filter(d=>!isWeekend(d)).slice(0,14);
 const displayDate = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
 const shortDay    = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
@@ -1515,6 +1531,7 @@ function UserFormModal({ modal, onSave, onClose }) {
   const [username, setUname]    = useState(item?.username  || "");
   const [password, setPass]     = useState(item?.password  || "");
   const [program, setProgram]   = useState(item?.program   || "MSc");
+  const [enrollYear, setEnrollYear] = useState(item?.enrollYear || new Date().getFullYear());
   const [zone, setZone]         = useState(item?.zone      || "A");
   const [defaultZone, setDefZ]  = useState(item?.defaultZone || "A");
   const [err, setErr]           = useState("");
@@ -1524,7 +1541,7 @@ function UserFormModal({ modal, onSave, onClose }) {
     if (!username.trim()) return setErr("กรุณากรอกชื่อผู้ใช้");
     if (!password.trim()) return setErr("กรุณากรอกรหัสผ่าน");
     const base = { id:item?.id||"", name, username, password };
-    onSave(isStudent ? {...base, program} : {...base, defaultZone, zone: defaultZone, schedule:item?.schedule||[]});
+    onSave(isStudent ? {...base, program, enrollYear: Number(enrollYear)} : {...base, defaultZone, zone: defaultZone, schedule:item?.schedule||[]});
   };
 
   return (
@@ -1547,6 +1564,17 @@ function UserFormModal({ modal, onSave, onClose }) {
           <select style={inpStyle} value={program} onChange={e=>setProgram(e.target.value)}>
             {PROGRAMS.map(p=><option key={p} value={p}>{PROGRAM_LABELS[p]}</option>)}
           </select>
+        </div>
+      )}
+      {isStudent&&(
+        <div style={{ marginBottom:14 }}>
+          <label style={lblStyle}>ปีที่เข้าศึกษา (Enroll Year)</label>
+          <select style={inpStyle} value={enrollYear} onChange={e=>setEnrollYear(e.target.value)}>
+            {Array.from({length:10},(_,i)=>new Date().getFullYear()-i).map(y=>(
+              <option key={y} value={y}>{y} — ชั้นปีที่ {getClassYear(y)||"?"}</option>
+            ))}
+          </select>
+          <p style={{ margin:"4px 0 0", fontSize:11.5, color:C.muted }}>ชั้นปีปัจจุบัน: ปีที่ {getClassYear(enrollYear)||"—"} (นับจาก 1 ส.ค. ของแต่ละปี)</p>
         </div>
       )}
       {!isStudent&&(
@@ -1675,7 +1703,7 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โปรแกรม",""].map(h=>(
+              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โปรแกรม","ชั้นปี",""].map(h=>(
                 <th key={h} style={{ textAlign:"left", padding:"10px 16px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
               ))}
             </tr></thead>
@@ -1687,6 +1715,11 @@ try {
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{s.username}</td>
                   <td style={{ padding:"11px 16px" }}><span style={{ background:C.soft, borderRadius:6, padding:"2px 8px", fontFamily:"monospace", fontSize:12 }}>{s.password}</span></td>
                   <td style={{ padding:"11px 16px" }}><Badge t="active">{PROGRAM_LABELS[s.program]||s.program}</Badge></td>
+                  <td style={{ padding:"11px 16px", fontSize:13 }}>
+                    {s.enrollYear ? (
+                      <span title={`รุ่น ${s.enrollYear}`}>ปีที่ {getClassYear(s.enrollYear)}</span>
+                    ) : <span style={{ color:C.faint }}>—</span>}
+                  </td>
                   <td style={{ padding:"11px 16px" }}>
                     <div style={{ display:"flex", gap:8 }}>
                       <button style={{ ...btnStyle("ghost"), padding:"5px 12px", fontSize:12 }} onClick={()=>setModal({type:"student",item:s})}>แก้ไข</button>
@@ -2006,6 +2039,11 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
         <p style={{ margin:"0 0 1px", fontSize:13.5, fontWeight:500, color:"#fff" }}>{user.name}</p>
         <p style={{ margin:"0 0 12px", fontSize:12, color:"rgba(255,255,255,0.3)" }}>
           {user.role==="admin"?"ผู้ดูแลระบบ":user.role==="advisor"?"อาจารย์นิเทศ":PROGRAM_LABELS[user.program]||user.program}
+          {user.role==="student" && user.enrollYear && (
+            <span style={{ display:"block", marginTop:2 }}>
+              ชั้นปีที่ {getClassYear(user.enrollYear)} · รุ่น {user.enrollYear}
+            </span>
+          )}
         </p>
         <button onClick={onRefresh} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.9)", border:"1px solid rgba(255,255,255,0.2)", fontSize:12.5, marginBottom:8 }}>
           ↻ รีเฟรชข้อมูล
@@ -2058,9 +2096,23 @@ export default function App() {
       setAdvisors(data.advisors);
       setStudents(data.students);
       setUnits(data.units);
-      setReservations(data.reservations);
       setAdmins(data.admins);
       setSessAdvs(freshSessAdvs);
+
+      // ── Auto-archive reservations older than 18 months ────────────────────
+      const toArchive = data.reservations.filter(
+        r => r.date < eighteenMonthsAgoStr && r.status !== "cancelled"
+      );
+      const activeReservations = data.reservations.filter(
+        r => r.date >= eighteenMonthsAgoStr
+      );
+      setReservations(activeReservations);
+      // Fire-and-forget: mark each old reservation cancelled in Sheets
+      toArchive.forEach(r => {
+        SheetsDB.updateReservationStatus(r.id, "cancelled").catch(err =>
+          console.warn(`Archive ${r.id} failed:`, err)
+        );
+      });
     } catch (error) {
       console.error("Sheets sync error:", error);
       setLoadError(error.message);
