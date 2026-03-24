@@ -887,8 +887,16 @@ function EditBookingModal({ reservation, onSave, onClose }) {
 }
 
 /* ═══ PRINT SESSION SUMMARY ══════════════════════════════════════════════════════
-   Renders a landscape A4 print view and triggers window.print().
-   Called when admin clicks "พิมพ์สรุปช่วง".
+   iOS-compatible print using @media print + a hidden #__print_root__ div.
+   Strategy: inject summary HTML + a <style> that hides everything EXCEPT
+   #__print_root__ during printing. Call window.print() synchronously inside
+   the click handler — no popup, no iframe, no setTimeout. After the print
+   dialog closes (via the afterprint event) the injected nodes are removed.
+
+   This works on iOS Safari because:
+     • window.print() is called in the same synchronous tick as the user tap
+     • No new window / popup needed — the current document IS the print source
+     • @media print CSS controls exactly what appears on the printed page
    ════════════════════════════════════════════════════════════════════════════════ */
 function printSessionSummary({ dateStr, session, reservations, units, advisors, sessionAdvisors }) {
   const key    = `${dateStr}__${session}`;
@@ -900,199 +908,140 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
   const sessionLabel = session === "morning" ? "ช่วงเช้า 09:00–12:00" : "ช่วงบ่าย 13:00–16:00";
   const printDate    = displayDate(dateStr);
 
-  // Build one section per zone, with advisor as the section header
   const zoneSections = [0, 1, 2].map(zIdx => {
-    const zoneName  = ["A","B","C"][zIdx];
-    const adv       = advisors.find(a => a.id === advIds[zIdx]);
-    const advName   = adv?.name || "ยังไม่ระบุอาจารย์นิเทศ";
-    const zoneRows  = rows.filter(r => {
+    const zoneName     = ["A","B","C"][zIdx];
+    const adv          = advisors.find(a => a.id === advIds[zIdx]);
+    const advName      = adv?.name || "ยังไม่ระบุอาจารย์นิเทศ";
+    const zoneRows     = rows.filter(r => {
       const u = units.find(u => u.id === r.unitId);
       return (u?.zoneIdx ?? -1) === zIdx;
     }).sort((a, b) => a.unitId - b.unitId);
-
-    // All 8 units in this zone (slots 1–8 / 9–16 / 17–24)
-    const allZoneUnits = units
-      .filter(u => u.zoneIdx === zIdx)
-      .sort((a, b) => a.id - b.id);
+    const allZoneUnits = units.filter(u => u.zoneIdx === zIdx).sort((a,b) => a.id - b.id);
 
     const unitRows = allZoneUnits.map(unit => {
-      const bookingsForUnit = zoneRows.filter(r => r.unitId === unit.id);
+      const bks     = zoneRows.filter(r => r.unitId === unit.id);
       const isMaint = unit.status === "maintenance";
-      if (isMaint) {
-        return `<tr style="background:#f4f5f7;color:#9ca3af">
-          <td style="padding:3px 8px;font-weight:600">${unit.name}</td>
-          <td colspan="5" style="padding:3px 8px;font-style:italic">ซ่อมบำรุง</td>
-          <td style="padding:3px 8px;text-align:center">—</td>
-        </tr>`;
-      }
-      if (bookingsForUnit.length === 0) {
-        return `<tr style="color:#9ca3af">
-          <td style="padding:3px 8px;font-weight:600">${unit.name}</td>
-          <td colspan="5" style="padding:3px 8px">ว่าง</td>
-          <td style="padding:3px 8px;text-align:center">—</td>
-        </tr>`;
-      }
-      return bookingsForUnit.map((booking, idx) => {
-        const isFirst = idx === 0;
-        const isOver  = bookingsForUnit.length > 1;
-        const rowBg   = isOver ? "background:#fef3c7;" : "";
-        const unitCell = isFirst
-          ? `<td style="padding:3px 8px;font-weight:600;${isOver ? "border-top:2px solid #fcd34d;" : ""}" rowspan="${bookingsForUnit.length}">${unit.name}${isOver ? `<br><span style="font-size:6.5pt;color:#92400e;font-weight:700">⚠ OVER×${bookingsForUnit.length}</span>` : ""}</td>`
+      if (isMaint) return `<tr class="p-maint"><td class="p-u">${unit.name}</td><td colspan="5" class="p-it">ซ่อมบำรุง</td><td class="p-c">—</td></tr>`;
+      if (bks.length === 0) return `<tr class="p-empty"><td class="p-u">${unit.name}</td><td colspan="5" class="p-va">ว่าง</td><td class="p-c">—</td></tr>`;
+      return bks.map((b, i) => {
+        const isOver = bks.length > 1;
+        const uCell  = i === 0
+          ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        return `<tr style="${rowBg}border-bottom:1px solid #e5e7eb">
-          ${unitCell}
-          <td style="padding:3px 8px">${booking.studentName}</td>
-          <td style="padding:3px 8px">${booking.patientName}</td>
-          <td style="padding:3px 8px">${booking.hn}</td>
-          <td style="padding:3px 8px">${booking.treatment}</td>
-          <td style="padding:3px 8px;text-align:center">${isOver ? "⚠" : "✓"}</td>
-        </tr>`;
+        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
       }).join("");
     }).join("");
 
     const booked = zoneRows.length;
     const avail  = allZoneUnits.filter(u => u.status === "active").length - booked;
+    const overCt = zoneRows.filter(r => r.overbooked).length;
 
-    return `
-      <div class="zone-block">
-        <!-- Advisor name is the prominent section heading -->
-        <div class="zone-header">
-          <div class="adv-name">${advName}</div>
-          <div class="zone-tag">Zone ${zoneName} &nbsp;·&nbsp; ยูนิต ${zIdx*8+1}–${zIdx*8+8}</div>
-          <div class="zone-stats">
-            <span class="stat-pill stat-booked">${booked} จอง</span>
-            <span class="stat-pill stat-avail">${avail} ว่าง</span>
-            ${zoneRows.filter(r=>r.overbooked).length > 0
-              ? `<span class="stat-pill stat-over">${zoneRows.filter(r=>r.overbooked).length} Overbook</span>`
-              : ""}
-          </div>
-        </div>
-        <table>
-          <thead><tr>
-            <th style="width:58px">ยูนิต</th>
-            <th style="width:120px">นิสิต</th>
-            <th style="width:110px">ผู้ป่วย</th>
-            <th style="width:80px">HN</th>
-            <th>การรักษา / หัตถการ</th>
-            <th style="width:44px;text-align:center">สถานะ</th>
-          </tr></thead>
-          <tbody>${unitRows}</tbody>
-        </table>
-      </div>`;
+    return `<div class="p-zone">
+      <div class="p-zh">
+        <span class="p-adv">${advName}</span>
+        <span class="p-ztag">Zone ${zoneName} · ยูนิต ${zIdx*8+1}–${zIdx*8+8}</span>
+        <span class="p-pill p-pb">${booked} จอง</span>
+        <span class="p-pill p-pa">${avail} ว่าง</span>
+        ${overCt > 0 ? `<span class="p-pill p-po">${overCt} Over</span>` : ""}
+      </div>
+      <table class="p-tbl"><thead><tr>
+        <th class="p-th" style="width:58px">ยูนิต</th>
+        <th class="p-th" style="width:120px">นิสิต</th>
+        <th class="p-th" style="width:110px">ผู้ป่วย</th>
+        <th class="p-th" style="width:80px">HN</th>
+        <th class="p-th">การรักษา / หัตถการ</th>
+        <th class="p-th" style="width:44px;text-align:center">สถานะ</th>
+      </tr></thead><tbody>${unitRows}</tbody></table>
+    </div>`;
   }).join("");
 
-  const html = `<!DOCTYPE html><html><head>
-    <meta charset="utf-8">
-    <title>CUProstho — ${printDate} ${sessionLabel}</title>
-    <style>
-      @page { size: A4 portrait; margin: 10mm 12mm; }
-      * { box-sizing: border-box; }
-      body { font-family: 'Sarabun', Arial, sans-serif; font-size: 8.5pt; color: #16191f; margin:0; }
-
-      /* ── Document header ── */
-      .doc-header { display:flex; justify-content:space-between; align-items:center;
-                    border-bottom:2px solid #16191f; padding-bottom:6px; margin-bottom:8px; }
-      .doc-title h1 { font-size:12pt; font-weight:700; margin:0 0 1px; }
-      .doc-title p  { font-size:8pt; color:#6b7280; margin:0; }
-      .doc-summary  { display:flex; gap:8px; }
-      .sum-box { background:#f4f5f7; border-radius:4px; padding:3px 10px; text-align:center; min-width:52px; }
-      .sum-box strong { display:block; font-size:13pt; line-height:1.1; font-weight:700; }
-      .sum-box span   { font-size:7pt; color:#6b7280; }
-
-      /* ── Zone blocks — stacked vertically, one per advisor ── */
-      .zone-block { margin-bottom:8px; break-inside:avoid; }
-
-      /* ── Advisor section header ── */
-      .zone-header {
-        background:#16191f; color:#fff;
-        padding:5px 10px;
-        border-radius:5px 5px 0 0;
-        display:flex; align-items:center; gap:10px;
-      }
-      .adv-name  { font-size:9.5pt; font-weight:700; flex:1; letter-spacing:0.2px; }
-      .zone-tag  { font-size:7.5pt; opacity:0.65; white-space:nowrap; }
-      .zone-stats { display:flex; gap:4px; }
-      .stat-pill  { border-radius:99px; padding:1px 7px; font-size:7pt; font-weight:600; white-space:nowrap; }
-      .stat-booked { background:#344e78; color:#fff; }
-      .stat-avail  { background:#d1fae5; color:#065f46; }
-      .stat-over   { background:#fef3c7; color:#92400e; }
-
-      /* ── Booking table ── */
-      table { width:100%; border-collapse:collapse; font-size:8pt; border:1px solid #e5e7eb; border-top:none; }
-      thead tr { background:#f9fafb; }
-      th { padding:3px 8px; text-align:left; font-weight:600; font-size:7pt;
-           text-transform:uppercase; letter-spacing:0.3px;
-           border-bottom:1px solid #e5e7eb; color:#6b7280; }
-      td { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-      tr:last-child td { border-bottom:none; }
-
-      .footer { margin-top:6px; font-size:7pt; color:#9ca3af;
-                display:flex; justify-content:space-between;
-                border-top:1px solid #e5e7eb; padding-top:4px; }
-    </style>
-  </head><body>
-    <div class="doc-header">
-      <div class="doc-title">
-        <h1>🦷 CUProstho — สรุปการจองยูนิต</h1>
-        <p>${printDate} &nbsp;·&nbsp; ${sessionLabel}</p>
-      </div>
-      <div class="doc-summary">
-        <div class="sum-box"><strong>${rows.length}</strong><span>จองทั้งหมด</span></div>
-        <div class="sum-box"><strong>${rows.filter(r=>r.overbooked).length}</strong><span>Overbooked</span></div>
-        <div class="sum-box"><strong>${24 - rows.length}</strong><span>ว่าง</span></div>
+  const bodyHTML = `
+    <div class="p-hdr">
+      <div><h1 class="p-h1">🦷 CUProstho — สรุปการจองยูนิต</h1><p class="p-sub">${printDate} · ${sessionLabel}</p></div>
+      <div class="p-stats">
+        <div class="p-sbox"><strong>${rows.length}</strong><span>จองทั้งหมด</span></div>
+        <div class="p-sbox"><strong>${rows.filter(r=>r.overbooked).length}</strong><span>Overbooked</span></div>
+        <div class="p-sbox"><strong>${24-rows.length}</strong><span>ว่าง</span></div>
       </div>
     </div>
     ${zoneSections}
-    <div class="footer">
+    <div class="p-foot">
       <span>พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")}</span>
       <span>CUProstho · คณะทันตแพทยศาสตร์</span>
-    </div>
-  </body></html>`;
+    </div>`;
 
-  /* ── iOS-compatible print: inject a hidden iframe instead of window.open ──
-     window.open() is blocked by Safari's popup blocker unless called in the
-     same synchronous tick as the user gesture. Using an iframe in the current
-     document avoids popups entirely and works reliably on iOS Safari.         */
-  const frameId = "__cuprostho_print_frame__";
-  let frame = document.getElementById(frameId);
-  if (frame) frame.remove();                       // clean up any previous frame
+  // ── Inject print stylesheet ───────────────────────────────────────────────
+  const STYLE_ID = "__print_style__";
+  const ROOT_ID  = "__print_root__";
 
-  frame = document.createElement("iframe");
-  frame.id = frameId;
-  frame.setAttribute("aria-hidden", "true");
-  Object.assign(frame.style, {
-    position: "fixed", top: "0", left: "0",
-    width: "1px", height: "1px",
-    border: "none", opacity: "0",
-    pointerEvents: "none", zIndex: "-1",
-  });
-  document.body.appendChild(frame);
+  // Remove any leftovers from a previous print
+  document.getElementById(STYLE_ID)?.remove();
+  document.getElementById(ROOT_ID)?.remove();
 
-  const doc = frame.contentDocument || frame.contentWindow.document;
-  doc.open();
-  doc.write(html);
-  doc.close();
-
-  /* Wait for fonts/layout to settle, then print.
-     On iOS, requestAnimationFrame + a small rAF chain is more reliable
-     than a fixed setTimeout because it ties into the actual render cycle. */
-  const triggerPrint = () => {
-    try {
-      frame.contentWindow.focus();
-      frame.contentWindow.print();
-    } catch (_) {
-      // Fallback: open as a blob URL (works on Android WebView edge cases)
-      const blob = new Blob([html], { type: "text/html" });
-      const url  = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = `
+    @media print {
+      @page { size: A4 portrait; margin: 10mm 12mm; }
+      body > *:not(#${ROOT_ID}) { display: none !important; }
+      #${ROOT_ID} { display: block !important; }
     }
-    // Remove frame after a delay so the print dialog has time to open
-    setTimeout(() => { frame.remove(); }, 30000);
-  };
+    #${ROOT_ID} {
+      display: none;
+      font-family: 'Sarabun', Arial, sans-serif;
+      font-size: 8.5pt;
+      color: #16191f;
+      box-sizing: border-box;
+    }
+    #${ROOT_ID} * { box-sizing: border-box; }
+    #${ROOT_ID} .p-hdr { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #16191f; padding-bottom:6px; margin-bottom:8px; }
+    #${ROOT_ID} .p-h1  { font-size:12pt; font-weight:700; margin:0 0 1px; }
+    #${ROOT_ID} .p-sub { font-size:8pt; color:#6b7280; margin:0; }
+    #${ROOT_ID} .p-stats { display:flex; gap:8px; }
+    #${ROOT_ID} .p-sbox { background:#f4f5f7; border-radius:4px; padding:3px 10px; text-align:center; min-width:52px; }
+    #${ROOT_ID} .p-sbox strong { display:block; font-size:13pt; line-height:1.1; font-weight:700; }
+    #${ROOT_ID} .p-sbox span   { font-size:7pt; color:#6b7280; }
+    #${ROOT_ID} .p-zone { margin-bottom:8px; break-inside:avoid; }
+    #${ROOT_ID} .p-zh   { background:#16191f; color:#fff; padding:5px 10px; border-radius:5px 5px 0 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #${ROOT_ID} .p-adv  { font-size:9.5pt; font-weight:700; flex:1; }
+    #${ROOT_ID} .p-ztag { font-size:7.5pt; opacity:0.65; white-space:nowrap; }
+    #${ROOT_ID} .p-pill { border-radius:99px; padding:1px 7px; font-size:7pt; font-weight:600; white-space:nowrap; }
+    #${ROOT_ID} .p-pb   { background:#344e78; color:#fff; }
+    #${ROOT_ID} .p-pa   { background:#d1fae5; color:#065f46; }
+    #${ROOT_ID} .p-po   { background:#fef3c7; color:#92400e; }
+    #${ROOT_ID} .p-tbl  { width:100%; border-collapse:collapse; font-size:8pt; border:1px solid #e5e7eb; border-top:none; }
+    #${ROOT_ID} .p-tbl thead tr { background:#f9fafb; }
+    #${ROOT_ID} .p-th   { padding:3px 8px; text-align:left; font-weight:600; font-size:7pt; text-transform:uppercase; letter-spacing:0.3px; border-bottom:1px solid #e5e7eb; color:#6b7280; }
+    #${ROOT_ID} .p-d    { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-u    { padding:3px 8px; font-weight:600; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-c    { padding:3px 8px; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-it   { padding:3px 8px; font-style:italic; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-va   { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-maint { background:#f4f5f7; color:#9ca3af; }
+    #${ROOT_ID} .p-empty { color:#9ca3af; }
+    #${ROOT_ID} .p-over  { background:#fef3c7; }
+    #${ROOT_ID} .p-ov    { border-top:2px solid #fcd34d; }
+    #${ROOT_ID} .p-ovl   { font-size:6.5pt; color:#92400e; font-weight:700; }
+    #${ROOT_ID} .p-foot  { margin-top:6px; font-size:7pt; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:4px; }
+  `;
 
-  // Two rAF ticks to ensure the iframe content is fully laid out
-  requestAnimationFrame(() => requestAnimationFrame(triggerPrint));
+  const root = document.createElement("div");
+  root.id = ROOT_ID;
+  root.innerHTML = bodyHTML;
+
+  document.head.appendChild(style);
+  document.body.appendChild(root);
+
+  // Clean up after printing (afterprint fires on all modern browsers + iOS 13+)
+  const cleanup = () => {
+    style.remove();
+    root.remove();
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+
+  // Synchronous call — keeps the user-gesture chain intact on iOS Safari
+  window.print();
 }
 
 /* ═══ ADMIN OVERVIEW ═════════════════════════════════════════════════════════════ */
