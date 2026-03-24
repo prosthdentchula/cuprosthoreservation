@@ -1049,11 +1049,50 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     </div>
   </body></html>`;
 
-  const w = window.open("","_blank","width=800,height=1100");
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(()=>{ w.print(); }, 400);
+  /* ── iOS-compatible print: inject a hidden iframe instead of window.open ──
+     window.open() is blocked by Safari's popup blocker unless called in the
+     same synchronous tick as the user gesture. Using an iframe in the current
+     document avoids popups entirely and works reliably on iOS Safari.         */
+  const frameId = "__cuprostho_print_frame__";
+  let frame = document.getElementById(frameId);
+  if (frame) frame.remove();                       // clean up any previous frame
+
+  frame = document.createElement("iframe");
+  frame.id = frameId;
+  frame.setAttribute("aria-hidden", "true");
+  Object.assign(frame.style, {
+    position: "fixed", top: "0", left: "0",
+    width: "1px", height: "1px",
+    border: "none", opacity: "0",
+    pointerEvents: "none", zIndex: "-1",
+  });
+  document.body.appendChild(frame);
+
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  /* Wait for fonts/layout to settle, then print.
+     On iOS, requestAnimationFrame + a small rAF chain is more reliable
+     than a fixed setTimeout because it ties into the actual render cycle. */
+  const triggerPrint = () => {
+    try {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } catch (_) {
+      // Fallback: open as a blob URL (works on Android WebView edge cases)
+      const blob = new Blob([html], { type: "text/html" });
+      const url  = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+    // Remove frame after a delay so the print dialog has time to open
+    setTimeout(() => { frame.remove(); }, 30000);
+  };
+
+  // Two rAF ticks to ensure the iframe content is fully laid out
+  requestAnimationFrame(() => requestAnimationFrame(triggerPrint));
 }
 
 /* ═══ ADMIN OVERVIEW ═════════════════════════════════════════════════════════════ */
