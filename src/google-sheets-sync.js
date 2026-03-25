@@ -3,9 +3,7 @@
  */
 
 // ── CONFIG ───────────────────────────────────────────────────────────────────
-// Set VITE_GAS_URL in your Vercel environment variables (or .env.local for dev).
-// Never commit the real URL to source control.
-export const WEB_APP_URL = import.meta.env.VITE_GAS_URL;
+export const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyjV5ZDUP7PGDKjVjhprqUIUwP_0tuMQdB1Y_5UFtybc5I6RlxC-PIpnOiVYUuQ7ZbA/exec";
 
 /**
  * Dummy function to keep App.jsx happy!
