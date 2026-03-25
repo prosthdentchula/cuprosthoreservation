@@ -28,27 +28,27 @@ function clearSession()    { try { sessionStorage.removeItem(SESSION_KEY); } cat
    dow: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
    ══════════════════════════════════════════════════════════════════════════════ */
 const SEED_ADVISORS = [
-  { id:"ADV001", name:"Dr. Siriporn Komarakul",    username:"siriporn",  password:"adv1234", defaultZone:"A",
+  { id:"ADV001", name:"Dr. Siriporn Komarakul",    username:"siriporn",  password:"", defaultZone:"A",
     schedule:[{dow:1,session:"morning"},{dow:3,session:"morning"},{dow:5,session:"morning"}], active:true },
-  { id:"ADV002", name:"Dr. Thanawat Phumiphan",    username:"thanawat",  password:"adv1234", defaultZone:"B",
+  { id:"ADV002", name:"Dr. Thanawat Phumiphan",    username:"thanawat",  password:"", defaultZone:"B",
     schedule:[{dow:1,session:"morning"},{dow:2,session:"afternoon"},{dow:4,session:"morning"}], active:true },
-  { id:"ADV003", name:"Dr. Kannika Rungrojwanich", username:"kannika",   password:"adv1234", defaultZone:"C",
+  { id:"ADV003", name:"Dr. Kannika Rungrojwanich", username:"kannika",   password:"", defaultZone:"C",
     schedule:[{dow:2,session:"morning"},{dow:3,session:"morning"},{dow:5,session:"afternoon"}], active:true },
-  { id:"ADV004", name:"Dr. Wanchai Srisawat",      username:"wanchai",   password:"adv1234", defaultZone:"A",
+  { id:"ADV004", name:"Dr. Wanchai Srisawat",      username:"wanchai",   password:"", defaultZone:"A",
     schedule:[{dow:2,session:"morning"},{dow:4,session:"morning"},{dow:4,session:"afternoon"}], active:true },
-  { id:"ADV005", name:"Dr. Patcharee Limsakul",    username:"patcharee", password:"adv1234", defaultZone:"B",
+  { id:"ADV005", name:"Dr. Patcharee Limsakul",    username:"patcharee", password:"", defaultZone:"B",
     schedule:[{dow:1,session:"afternoon"},{dow:3,session:"morning"},{dow:5,session:"morning"}], active:true },
 ];
 
 const SEED_STUDENTS = [
-  { id:"D6001", name:"Ariya Sutthirak",       username:"D6001", password:"1234", program:"MSc",       enrollYear:2023, active:true },
-  { id:"D6002", name:"Pimchanok Lertwattana", username:"D6002", password:"1234", program:"PhD",       enrollYear:2022, active:true },
-  { id:"D6003", name:"Thanakorn Wichit",      username:"D6003", password:"1234", program:"Resident",  enrollYear:2024, active:true },
-  { id:"D6004", name:"Lalita Maneechai",      username:"D6004", password:"1234", program:"HigherGrad",enrollYear:2023, active:true },
-  { id:"D6005", name:"Kritsana Boonsong",     username:"D6005", password:"1234", program:"MSc",       enrollYear:2024, active:true },
+  { id:"D6001", name:"Ariya Sutthirak",       username:"D6001", password:"", program:"MSc",       enrollYear:2023, active:true },
+  { id:"D6002", name:"Pimchanok Lertwattana", username:"D6002", password:"", program:"PhD",       enrollYear:2022, active:true },
+  { id:"D6003", name:"Thanakorn Wichit",      username:"D6003", password:"", program:"Resident",  enrollYear:2024, active:true },
+  { id:"D6004", name:"Lalita Maneechai",      username:"D6004", password:"", program:"HigherGrad",enrollYear:2023, active:true },
+  { id:"D6005", name:"Kritsana Boonsong",     username:"D6005", password:"", program:"MSc",       enrollYear:2024, active:true },
 ];
 
-const SEED_ADMINS = [{ id:"A001", name:"Admin", username:"admin", password:"admin" }];
+const SEED_ADMINS = [{ id:"A001", name:"Admin", username:"admin", password:"" }];
 
 /* ═══ Constants & helpers ════════════════════════════════════════════════════════ */
 const PROGRAMS = ["MSc","PhD","Resident","HigherGrad"];
