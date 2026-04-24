@@ -358,7 +358,6 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   const [hn, setHn]                   = useState("");
   const [treatment, setTreatment]     = useState("");
   const [isGhost, setIsGhost]         = useState(false);
-  const [inheritUnit, setInheritUnit] = useState(false);
   const [err, setErr]                 = useState("");
   const [dupConfirmed, setDupConfirmed] = useState(false);
 
@@ -396,7 +395,7 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
     if (!patientName.trim()) return setErr("กรุณากรอกชื่อผู้ป่วย");
     if (!hn.trim())          return setErr("กรุณากรอก HN");
     if (!treatment.trim())   return setErr("กรุณากรอกข้อมูลการรักษา");
-    onConfirm({ patientName, hn, treatment, overbooked, isGhost, inheritUnit });
+    onConfirm({ patientName, hn, treatment, overbooked, isGhost });
   };
 
   return (
@@ -431,15 +430,6 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
           <label htmlFor="ghost-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
             <span style={{ fontWeight:600, color:"#7c3aed" }}>👻 ฉันเป็นผี</span>
             <span style={{ color:C.muted, marginLeft:6 }}>— ฉันไม่มีสิทธิ์จองในช่วงนี้ตามตาราง</span>
-          </label>
-        </div>
-        {/* ใช้ยูนิตต่อ checkbox */}
-        <div style={{ background:"#f0fdf4", border:`1px solid #bbf7d0`, borderRadius:8, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:12 }}>
-          <input type="checkbox" id="inherit-chk" checked={inheritUnit} onChange={e=>setInheritUnit(e.target.checked)}
-            style={{ width:17, height:17, marginTop:2, accentColor:C.green, cursor:"pointer", flexShrink:0 }} />
-          <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
-            <span style={{ fontWeight:600, color:C.green }}>🔗 ใช้ยูนิตต่อ</span>
-            <span style={{ color:C.muted, marginLeft:6 }}>— นิสิตคนอื่นจองยูนิตนี้ไว้ก่อน และฉันใช้ยูนิตต่อจากเขา</span>
           </label>
         </div>
       </div>
@@ -511,7 +501,6 @@ function DaySummaryPanel({ reservations, units, advisors, date, session, session
                   {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
                   <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
                   {r.isGhost && <span style={{ fontSize:11 }}>👻</span>}
-                  {r.inheritUnit && <span style={{ fontSize:11 }}>🔗</span>}
                   {r.overbooked && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
                 </div>
                 {/* Zone */}
@@ -676,10 +665,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
                       {!isMaint&&!isBooked&&<span style={{ width:8, height:8, borderRadius:"50%", background:"#10b981", display:"block", marginTop:5 }} />}
                     </div>
                     {isBooked
-                      ? <p style={{ margin:0, fontSize:11.5, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {bks[0].inheritUnit && <span style={{ marginRight:3 }}>🔗</span>}
-                          {bks[0].patientName}
-                        </p>
+                      ? <p style={{ margin:0, fontSize:11.5, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{bks[0].patientName}</p>
                       : <p style={{ margin:0, fontSize:11.5, color:C.faint }}>ว่าง</p>}
                   </div>
                 );
@@ -798,7 +784,6 @@ function MyReservationsPage({ reservations, user, units, sessionAdvisors, adviso
                     <Badge t={r.session}>{r.session==="morning"?"ช่วงเช้า":"ช่วงบ่าย"}</Badge>
                     <Badge t={r.overbooked?"overbooked":r.status}>{r.overbooked?"⚠ Overbook":r.status==="confirmed"?"ยืนยันแล้ว":r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"}</Badge>
                     {r.isGhost&&<span style={{ background:"#fdf4ff", color:"#7c3aed", borderRadius:99, padding:"2px 9px", fontSize:11, fontWeight:600 }}>👻 ผี</span>}
-                    {r.inheritUnit&&<span style={{ background:"#f0fdf4", color:C.green, borderRadius:99, padding:"2px 9px", fontSize:11, fontWeight:600 }}>🔗 ใช้ยูนิตต่อ</span>}
                   </div>
                   <p style={{ margin:0, fontSize:13, color:C.muted }}>{displayDate(r.date)} · {r.patientName} · {r.hn}</p>
                   <p style={{ margin:"2px 0 0", fontSize:12.5, color:C.faint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.treatment}</p>
@@ -826,7 +811,6 @@ function MyReservationsPage({ reservations, user, units, sessionAdvisors, adviso
               ["สถานะ",detail.r.status==="confirmed"?"ยืนยันแล้ว":detail.r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"],
               ["Overbooked",detail.r.overbooked?"⚠ ใช่ — แจ้งผู้ดูแลแล้ว":"ไม่มี"],
               ["ผี",detail.r.isGhost?"👻 ใช่":"ไม่ใช่"],
-              ["ใช้ยูนิตต่อ",detail.r.inheritUnit?"🔗 ใช่ — ต่อจากนิสิตอื่น":"ไม่ใช่"],
             ].map(([k,v])=>(
               <div key={k} style={{ display:"flex", paddingBottom:10, borderBottom:`1px solid ${C.line}` }}>
                 <span style={{ width:160, flexShrink:0, fontSize:12.5, color:C.muted, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3 }}>{k}</span>
@@ -946,7 +930,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         const uCell  = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}${b.inheritUnit?' <span style="color:#065f46;font-size:10px">🔗ต่อ</span>':""}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
+        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -2150,11 +2134,11 @@ export default function App() {
     loadFromSheets();
   };
 
-const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost, inheritUnit }) => {
+const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost }) => {
     const newRes = {
       id: generateId("reservation", reservations), studentId:user.id, studentName:user.name,
       unitId:unit.id, date, session, patientName, hn, treatment,
-      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost, inheritUnit: !!inheritUnit
+      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost
     };
     setReservations(p=>[...p, newRes]);
     if (isGhost) notify(`👻 จองในฐานะ "ผี" — ยูนิต ${unit.name} — แจ้งผู้ดูแลระบบแล้ว`, true);
