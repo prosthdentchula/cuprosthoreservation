@@ -149,7 +149,9 @@ function generateId(type, existingItems) {
     const d = todayStr.replace(/-/g,"");
     const todayRsvs = existingItems.filter(r=>r.createdAt===todayStr||r.id.startsWith(`R-${d}`));
     const n = String(todayRsvs.length + 1).padStart(4,"0");
-    return `R-${d}-${n}`;
+    // Add a 3-character random suffix to prevent collisions during simultaneous bookings
+    const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `R-${d}-${n}-${rand}`;
   }
   if (type === "student") {
     const nums = existingItems.map(s=>parseInt(s.id.replace(/\D/g,""),10)).filter(n=>!isNaN(n));
