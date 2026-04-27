@@ -1005,14 +1005,15 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     const unitRows = allZoneUnits.map(unit => {
       const bks     = zoneRows.filter(r => r.unitId === unit.id);
       const isMaint = unit.status === "maintenance";
-      if (isMaint) return `<tr class="p-maint"><td class="p-u">${unit.name}</td><td colspan="5" class="p-it">ซ่อมบำรุง</td><td class="p-c">—</td></tr>`;
-      if (bks.length === 0) return `<tr class="p-empty"><td class="p-u">${unit.name}</td><td colspan="5" class="p-va">ว่าง</td><td class="p-c">—</td></tr>`;
+      if (isMaint) return `<tr class="p-maint"><td class="p-u">${unit.name}</td><td colspan="5" class="p-it">ซ่อมบำรุง</td><td class="p-c">—</td><td class="p-c">—</td></tr>`;
+      if (bks.length === 0) return `<tr class="p-empty"><td class="p-u">${unit.name}</td><td colspan="5" class="p-va">ว่าง</td><td class="p-c">—</td><td class="p-c">—</td></tr>`;
       return bks.map((b, i) => {
-        const isOver = bks.length > 1;
+        const isOver    = bks.length > 1;
+        const inheritMark = b.inheritUnit ? `<span class="p-inh">🔗</span>` : "—";
         const uCell  = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
+        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -1035,6 +1036,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         <th class="p-th" style="width:80px">HN</th>
         <th class="p-th">การรักษา / หัตถการ</th>
         <th class="p-th" style="width:44px;text-align:center">สถานะ</th>
+        <th class="p-th" style="width:50px;text-align:center">ต่อยูนิต</th>
       </tr></thead><tbody>${unitRows}</tbody></table>
     </div>`;
   }).join("");
@@ -1106,6 +1108,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     #${ROOT_ID} .p-over  { background:#fef3c7; }
     #${ROOT_ID} .p-ov    { border-top:2px solid #fcd34d; }
     #${ROOT_ID} .p-ovl   { font-size:6.5pt; color:#92400e; font-weight:700; }
+    #${ROOT_ID} .p-inh   { font-size:8pt; color:#d97706; font-weight:600; }
     #${ROOT_ID} .p-foot  { margin-top:6px; font-size:7pt; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:4px; }
   `;
 
@@ -1321,7 +1324,7 @@ function AdminOverview({ reservations, units, advisors, sessionAdvisors }) {
             <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead><tr style={{ borderBottom:`2px solid ${C.line}` }}>
-                  {["ยูนิต","ช่วง","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ","ผี"].map(h=>(
+                  {["ยูนิต","ช่วง","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ","ผี","ต่อยูนิต"].map(h=>(
                     <th key={h} style={{ textAlign:"left", padding:"7px 12px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
                   ))}
                 </tr></thead>
@@ -1338,6 +1341,7 @@ function AdminOverview({ reservations, units, advisors, sessionAdvisors }) {
                         <td style={{ padding:"9px 12px", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.treatment}</td>
                         <td style={{ padding:"9px 12px" }}><Badge t={r.overbooked?"overbooked":r.status}>{r.overbooked?"⚠ Over":r.status==="confirmed"?"ยืนยันแล้ว":r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"}</Badge></td>
                         <td style={{ padding:"9px 12px" }}>{r.isGhost?<span style={{ color:"#7c3aed", fontWeight:600 }}>👻</span>:<span style={{ color:C.faint }}>—</span>}</td>
+                        <td style={{ padding:"9px 12px" }}>{r.inheritUnit?<span style={{ background:"#fffbeb", color:"#d97706", borderRadius:6, padding:"2px 8px", fontSize:11.5, fontWeight:600 }}>🔗 ต่อ</span>:<span style={{ color:C.faint }}>—</span>}</td>
                       </tr>
                     );
                   })}
@@ -2030,13 +2034,13 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["วันที่","ช่วง","ยูนิต","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ",""].map(h=>(
+              {["วันที่","ช่วง","ยูนิต","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ","ผี","ต่อยูนิต",""].map(h=>(
                 <th key={h} style={{ textAlign:"left", padding:"10px 14px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, whiteSpace:"nowrap" }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {filtered.length===0?(
-                <tr><td colSpan={9} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
+                <tr><td colSpan={11} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
               ):filtered.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
                 const unit = units.find(u=>u.id===r.unitId);
                 return (
@@ -2050,6 +2054,8 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
                     <td style={{ padding:"9px 14px", color:C.muted }}>{r.hn}</td>
                     <td style={{ padding:"9px 14px", maxWidth:150, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.treatment}</td>
                     <td style={{ padding:"9px 14px" }}><Badge t={r.overbooked?"overbooked":r.status}>{r.overbooked?"⚠ Over":r.status==="confirmed"?"ยืนยันแล้ว":r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"}</Badge></td>
+                    <td style={{ padding:"9px 14px" }}>{r.isGhost?<span style={{ color:"#7c3aed", fontWeight:600 }}>👻</span>:<span style={{ color:C.faint }}>—</span>}</td>
+                    <td style={{ padding:"9px 14px" }}>{r.inheritUnit?<span style={{ background:"#fffbeb", color:"#d97706", borderRadius:6, padding:"2px 8px", fontSize:11.5, fontWeight:600 }}>🔗 ต่อ</span>:<span style={{ color:C.faint }}>—</span>}</td>
                     <td style={{ padding:"9px 14px" }} onClick={e=>e.stopPropagation()}>
                       {r.status==="pending"&&<button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={()=>onUpdateStatus(r.id,"confirmed")}>ยืนยัน</button>}
                       {r.status==="confirmed"&&r.date>=todayStr&&<button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={()=>onUpdateStatus(r.id,"cancelled")}>ยกเลิก</button>}
@@ -2069,7 +2075,9 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
               ["นิสิต",detail.studentName],["ผู้ป่วย",detail.patientName],["HN",detail.hn],
               ["การรักษา",detail.treatment],
               ["สถานะ",detail.status==="confirmed"?"ยืนยันแล้ว":detail.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"],
-              ["Overbooked",detail.overbooked?"⚠ ใช่":"ไม่มี"]
+              ["Overbooked",detail.overbooked?"⚠ ใช่":"ไม่มี"],
+              ["ผี",detail.isGhost?"👻 ใช่":"ไม่ใช่"],
+              ["ต่อยูนิต",detail.inheritUnit?"🔗 ใช่ — ใช้ยูนิตต่อจากนิสิตคนก่อน":"ไม่ใช่"],
             ].map(([k,v])=>(
               <div key={k} style={{ display:"flex", paddingBottom:10, borderBottom:`1px solid ${C.line}` }}>
                 <span style={{ width:150, flexShrink:0, fontSize:12.5, color:C.muted, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3 }}>{k}</span>
