@@ -537,11 +537,12 @@ function DaySummaryPanel({ reservations, units, advisors, date, session, session
                 }}>
                 {/* Unit */}
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
-                  <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
-                  {r.isGhost && <span style={{ fontSize:11 }}>👻</span>}
-                  {r.overbooked && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
-                </div>
+  {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
+  <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
+  {r.isGhost && <span title="Ghost Booking">👻</span>}
+  {r.inheritUnit && <span title="Inherit Unit">🔗</span>} {/* Add this line */}
+  {r.overbooked && !r.inheritUnit && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
+</div>
                 {/* Zone */}
                 <span style={{ fontSize:12, color:C.muted, fontWeight:500 }}>
                   {zoneLabel[zIdx]}{adv ? <span title={adv.name} style={{ marginLeft:2, cursor:"default" }}>*</span> : ""}
