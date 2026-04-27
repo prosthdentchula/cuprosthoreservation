@@ -448,17 +448,24 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
             <span style={{ color:C.muted, marginLeft:6 }}>— ฉันไม่มีสิทธิ์จองในช่วงนี้ตามตาราง</span>
           </label>
         </div>
-        {/* Inherit Unit checkbox — only shown for overflow units */}
-        {unit.overflow && (
-          <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:8, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:12 }}>
-            <input type="checkbox" id="inherit-chk" checked={inheritUnit} onChange={e=>setInheritUnit(e.target.checked)}
-              style={{ width:17, height:17, marginTop:2, accentColor:"#d97706", cursor:"pointer", flexShrink:0 }} />
-            <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
-              <span style={{ fontWeight:600, color:"#d97706" }}>🔗 สืบทอดยูนิต (Inherit Unit)</span>
-              <span style={{ color:C.muted, marginLeft:6 }}>— ใช้ยูนิตนี้แทนยูนิตหลักที่เต็มแล้ว</span>
-            </label>
-          </div>
-        )}
+       {/* Inherit Unit checkbox — now shown whenever the unit is already booked */}
+{overbooked && (
+  <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:8, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:12 }}>
+    <input 
+      type="checkbox" 
+      id="inherit-chk" 
+      checked={inheritUnit} 
+      onChange={e=>setInheritUnit(e.target.checked)}
+      style={{ width:17, height:17, marginTop:2, accentColor:"#d97706", cursor:"pointer", flexShrink:0 }} 
+    />
+    <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
+      <span style={{ fontWeight:600, color:"#d97706" }}>🔗 สืบทอดยูนิต (Inherit Unit)</span>
+      <span style={{ color:C.muted, marginLeft:6 }}>
+        — ใช้ยูนิตต่อจากนิสิตคนก่อนหน้าในคาบเดียวกัน
+      </span>
+    </label>
+  </div>
+)}
       </div>
       {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
