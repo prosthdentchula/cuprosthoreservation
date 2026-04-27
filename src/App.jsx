@@ -1005,8 +1005,8 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     const unitRows = allZoneUnits.map(unit => {
       const bks     = zoneRows.filter(r => r.unitId === unit.id);
       const isMaint = unit.status === "maintenance";
-      if (isMaint) return `<tr class="p-maint"><td class="p-u">${unit.name}</td><td colspan="5" class="p-it">ซ่อมบำรุง</td><td class="p-c">—</td><td class="p-c">—</td></tr>`;
-      if (bks.length === 0) return `<tr class="p-empty"><td class="p-u">${unit.name}</td><td colspan="5" class="p-va">ว่าง</td><td class="p-c">—</td><td class="p-c">—</td></tr>`;
+      if (isMaint) return "";   // skip maintenance units
+      if (bks.length === 0) return "";  // skip empty units
       return bks.map((b, i) => {
         const isOver    = bks.length > 1;
         const inheritMark = b.inheritUnit ? `<span class="p-inh">🔗</span>` : "—";
@@ -1050,7 +1050,9 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         <div class="p-sbox"><strong>${24-rows.length}</strong><span>ว่าง</span></div>
       </div>
     </div>
+    <div class="p-zones">
     ${zoneSections}
+    </div>
     <div class="p-foot">
       <span>พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")}</span>
       <span>CUProstho · คณะทันตแพทยศาสตร์</span>
@@ -1068,48 +1070,48 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
   style.id = STYLE_ID;
   style.textContent = `
     @media print {
-      @page { size: A4 portrait; margin: 10mm 12mm; }
+      @page { size: A4 landscape; margin: 8mm 10mm; }
       body > *:not(#${ROOT_ID}) { display: none !important; }
       #${ROOT_ID} { display: block !important; }
     }
     #${ROOT_ID} {
       display: none;
       font-family: 'Sarabun', Arial, sans-serif;
-      font-size: 8.5pt;
+      font-size: 7.5pt;
       color: #16191f;
       box-sizing: border-box;
     }
     #${ROOT_ID} * { box-sizing: border-box; }
-    #${ROOT_ID} .p-hdr { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #16191f; padding-bottom:6px; margin-bottom:8px; }
-    #${ROOT_ID} .p-h1  { font-size:12pt; font-weight:700; margin:0 0 1px; }
-    #${ROOT_ID} .p-sub { font-size:8pt; color:#6b7280; margin:0; }
-    #${ROOT_ID} .p-stats { display:flex; gap:8px; }
-    #${ROOT_ID} .p-sbox { background:#f4f5f7; border-radius:4px; padding:3px 10px; text-align:center; min-width:52px; }
-    #${ROOT_ID} .p-sbox strong { display:block; font-size:13pt; line-height:1.1; font-weight:700; }
-    #${ROOT_ID} .p-sbox span   { font-size:7pt; color:#6b7280; }
-    #${ROOT_ID} .p-zone { margin-bottom:8px; break-inside:avoid; }
-    #${ROOT_ID} .p-zh   { background:#16191f; color:#fff; padding:5px 10px; border-radius:5px 5px 0 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    #${ROOT_ID} .p-adv  { font-size:9.5pt; font-weight:700; flex:1; }
-    #${ROOT_ID} .p-ztag { font-size:7.5pt; opacity:0.65; white-space:nowrap; }
-    #${ROOT_ID} .p-pill { border-radius:99px; padding:1px 7px; font-size:7pt; font-weight:600; white-space:nowrap; }
+    #${ROOT_ID} .p-hdr { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #16191f; padding-bottom:4px; margin-bottom:6px; }
+    #${ROOT_ID} .p-h1  { font-size:11pt; font-weight:700; margin:0 0 1px; }
+    #${ROOT_ID} .p-sub { font-size:7.5pt; color:#6b7280; margin:0; }
+    #${ROOT_ID} .p-stats { display:flex; gap:6px; }
+    #${ROOT_ID} .p-sbox { background:#f4f5f7; border-radius:4px; padding:2px 8px; text-align:center; min-width:48px; }
+    #${ROOT_ID} .p-sbox strong { display:block; font-size:11pt; line-height:1.1; font-weight:700; }
+    #${ROOT_ID} .p-sbox span   { font-size:6.5pt; color:#6b7280; }
+    /* 3-column zone layout for landscape */
+    #${ROOT_ID} .p-zones { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+    #${ROOT_ID} .p-zone { break-inside:avoid; }
+    #${ROOT_ID} .p-zh   { background:#16191f; color:#fff; padding:4px 8px; border-radius:4px 4px 0 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    #${ROOT_ID} .p-adv  { font-size:8.5pt; font-weight:700; flex:1; }
+    #${ROOT_ID} .p-ztag { font-size:6.5pt; opacity:0.65; white-space:nowrap; }
+    #${ROOT_ID} .p-pill { border-radius:99px; padding:1px 6px; font-size:6.5pt; font-weight:600; white-space:nowrap; }
     #${ROOT_ID} .p-pb   { background:#344e78; color:#fff; }
     #${ROOT_ID} .p-pa   { background:#d1fae5; color:#065f46; }
     #${ROOT_ID} .p-po   { background:#fef3c7; color:#92400e; }
-    #${ROOT_ID} .p-tbl  { width:100%; border-collapse:collapse; font-size:8pt; border:1px solid #e5e7eb; border-top:none; }
+    #${ROOT_ID} .p-tbl  { width:100%; border-collapse:collapse; font-size:7pt; border:1px solid #e5e7eb; border-top:none; }
     #${ROOT_ID} .p-tbl thead tr { background:#f9fafb; }
-    #${ROOT_ID} .p-th   { padding:3px 8px; text-align:left; font-weight:600; font-size:7pt; text-transform:uppercase; letter-spacing:0.3px; border-bottom:1px solid #e5e7eb; color:#6b7280; }
-    #${ROOT_ID} .p-d    { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-u    { padding:3px 8px; font-weight:600; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-c    { padding:3px 8px; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-it   { padding:3px 8px; font-style:italic; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-va   { padding:3px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-maint { background:#f4f5f7; color:#9ca3af; }
-    #${ROOT_ID} .p-empty { color:#9ca3af; }
+    #${ROOT_ID} .p-th   { padding:2px 6px; text-align:left; font-weight:600; font-size:6.5pt; text-transform:uppercase; letter-spacing:0.2px; border-bottom:1px solid #e5e7eb; color:#6b7280; }
+    #${ROOT_ID} .p-d    { padding:2px 6px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-u    { padding:2px 6px; font-weight:600; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-c    { padding:2px 6px; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-it   { padding:2px 6px; font-style:italic; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-va   { padding:2px 6px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
     #${ROOT_ID} .p-over  { background:#fef3c7; }
     #${ROOT_ID} .p-ov    { border-top:2px solid #fcd34d; }
-    #${ROOT_ID} .p-ovl   { font-size:6.5pt; color:#92400e; font-weight:700; }
-    #${ROOT_ID} .p-inh   { font-size:8pt; color:#d97706; font-weight:600; }
-    #${ROOT_ID} .p-foot  { margin-top:6px; font-size:7pt; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:4px; }
+    #${ROOT_ID} .p-ovl   { font-size:6pt; color:#92400e; font-weight:700; }
+    #${ROOT_ID} .p-inh   { font-size:7pt; color:#d97706; font-weight:600; }
+    #${ROOT_ID} .p-foot  { margin-top:5px; font-size:6.5pt; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:3px; }
   `;
 
   const root = document.createElement("div");
@@ -1246,7 +1248,7 @@ function AdminOverview({ reservations, units, advisors, sessionAdvisors }) {
 
       {/* ── Print session summary ── */}
       <div style={{ ...cardStyle, marginBottom:22, padding:"20px 24px" }}>
-        <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600 }}>🖨 พิมพ์สรุปช่วงเวลา (Portrait A4)</h3>
+        <h3 style={{ margin:"0 0 14px", fontSize:15, fontWeight:600 }}>🖨 พิมพ์สรุปช่วงเวลา (Landscape A4)</h3>
         <div style={{ display:"flex", gap:12, alignItems:"flex-end", flexWrap:"wrap" }}>
           <div style={{ flex:1, minWidth:160 }}>
             <label style={lblStyle}>เลือกวัน</label>
