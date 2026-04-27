@@ -459,7 +459,7 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
       style={{ width:17, height:17, marginTop:2, accentColor:"#d97706", cursor:"pointer", flexShrink:0 }} 
     />
     <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
-      <span style={{ fontWeight:600, color:"#d97706" }}>🔗 สืบทอดยูนิต (Inherit Unit)</span>
+      <span style={{ fontWeight:600, color:"#d97706" }}>🔗 ใช้ยูนิตต่อ</span>
       <span style={{ color:C.muted, marginLeft:6 }}>
         — ใช้ยูนิตต่อจากนิสิตคนก่อนหน้าในคาบเดียวกัน
       </span>
