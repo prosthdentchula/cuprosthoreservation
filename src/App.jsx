@@ -373,6 +373,7 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   const [hn, setHn]                   = useState("");
   const [treatment, setTreatment]     = useState("");
   const [isGhost, setIsGhost]         = useState(false);
+  const [inheritUnit, setInheritUnit] = useState(false);
   const [err, setErr]                 = useState("");
   const [dupConfirmed, setDupConfirmed] = useState(false);
 
@@ -410,7 +411,7 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
     if (!patientName.trim()) return setErr("กรุณากรอกชื่อผู้ป่วย");
     if (!hn.trim())          return setErr("กรุณากรอก HN");
     if (!treatment.trim())   return setErr("กรุณากรอกข้อมูลการรักษา");
-    onConfirm({ patientName, hn, treatment, overbooked, isGhost });
+    onConfirm({ patientName, hn, treatment, overbooked, isGhost, inheritUnit });
   };
 
   return (
@@ -447,6 +448,17 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
             <span style={{ color:C.muted, marginLeft:6 }}>— ฉันไม่มีสิทธิ์จองในช่วงนี้ตามตาราง</span>
           </label>
         </div>
+        {/* Inherit Unit checkbox — only shown for overflow units */}
+        {unit.overflow && (
+          <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:8, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:12 }}>
+            <input type="checkbox" id="inherit-chk" checked={inheritUnit} onChange={e=>setInheritUnit(e.target.checked)}
+              style={{ width:17, height:17, marginTop:2, accentColor:"#d97706", cursor:"pointer", flexShrink:0 }} />
+            <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
+              <span style={{ fontWeight:600, color:"#d97706" }}>🔗 สืบทอดยูนิต (Inherit Unit)</span>
+              <span style={{ color:C.muted, marginLeft:6 }}>— ใช้ยูนิตนี้แทนยูนิตหลักที่เต็มแล้ว</span>
+            </label>
+          </div>
+        )}
       </div>
       {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
@@ -1876,8 +1888,8 @@ const saveEdit = async () => {
     setEditing(null);
     notify("อัปเดตยูนิต (กำลังบันทึกพื้นหลัง)");
     try {
-      await SheetsDB.saveUnitStatus(targetUnit.id, targetUnit.status, targetUnit.overflow);
-      notify("✓ อัปเดตยูนิตลงฐานข้อมูลเสร็จสมบูรณ์");
+      await SheetsDB.saveUnitStatus(targetUnit.id, targetUnit.status);
+       notify("✓ อัปเดตยูนิตลงฐานข้อมูลเสร็จสมบูรณ์");
     } catch (error) {
       setUnits(prevUnits);
       notify(`⚠ อัปเดตยูนิตไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
@@ -1888,27 +1900,24 @@ const saveEdit = async () => {
     <div>
       <div style={{ marginBottom:28 }}>
         <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จัดการยูนิต</h2>
-        <p style={{ margin:0, color:C.muted, fontSize:14 }}>24 ยูนิตหลัก + ยูนิตเสริม (Overflow) · คลิกยูนิตเพื่อแก้ไข</p>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>24 ยูนิต แบ่ง 3 โซน · คลิกยูนิตเพื่อเปลี่ยนสถานะ</p>
       </div>
 
       {[0,1,2].map(z=>{
-        const regularUnits  = units.filter(u=>u.zoneIdx===z&&!u.overflow);
-        const overflowUnits = units.filter(u=>u.zoneIdx===z&&u.overflow).sort((a,b)=>a.id-b.id);
+        const zUnits   = units.filter(u=>u.zoneIdx===z);
         const todayKey = `${todayStr}__morning`;
         const advIds   = sessionAdvisors[todayKey]||["","",""];
         const adv      = advisors.find(a=>a.id===advIds[z]);
         return (
-          <div key={z} style={{ marginBottom:32 }}>
+          <div key={z} style={{ marginBottom:28 }}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
               <span style={{ fontSize:13, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:0.5 }}>
                 Zone {["A","B","C"][z]} — {adv?adv.name:"ยังไม่มีอาจารย์นิเทศวันนี้"}
               </span>
               <div style={{ flex:1, height:1, background:C.line }} />
             </div>
-
-            {/* Regular units */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10, marginBottom:overflowUnits.length>0?12:0 }}>
-              {regularUnits.map(unit=>{
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10 }}>
+              {zUnits.map(unit=>{
                 const isMaint = unit.status==="maintenance";
                 const upcoming = reservations.filter(r=>r.unitId===unit.id&&r.date>=todayStr&&r.status!=="cancelled");
                 return (
@@ -1927,42 +1936,6 @@ const saveEdit = async () => {
                 );
               })}
             </div>
-
-            {/* Overflow units */}
-            {overflowUnits.length>0&&(
-              <>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                  <span style={{ fontSize:11.5, fontWeight:600, color:C.amber, textTransform:"uppercase", letterSpacing:0.4 }}>
-                    ยูนิตเสริม (Overflow)
-                  </span>
-                  <div style={{ flex:1, height:1, background:C.amberLine }} />
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10 }}>
-                  {overflowUnits.map(unit=>{
-                    const isMaint = unit.status==="maintenance";
-                    const upcoming = reservations.filter(r=>r.unitId===unit.id&&r.date>=todayStr&&r.status!=="cancelled");
-                    return (
-                      <div key={unit.id} onClick={()=>openEdit(unit)}
-                        style={{ background:"#fffbeb", border:`1px solid ${isMaint?C.amberLine:"#fcd34d"}`, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"box-shadow .15s" }}
-                        onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.08)"}
-                        onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                          <div>
-                            <span style={{ fontWeight:600, fontSize:14 }}>{unit.name}</span>
-                            <div style={{ fontSize:9.5, color:C.amber, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3, marginTop:1 }}>ยูนิตเสริม</div>
-                          </div>
-                          <Badge t={isMaint?"maintenance":"active"}>{isMaint?"ซ่อมบำรุง":"ใช้งาน"}</Badge>
-                        </div>
-                        <p style={{ margin:"5px 0 0", fontSize:12, color:C.muted }}>{unit.room}</p>
-                        {upcoming.length>0&&!isMaint&&(
-                          <p style={{ margin:"5px 0 0", fontSize:11.5, color:C.amber }}>⚠ {upcoming.length} การจองที่จะมาถึง</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
           </div>
         );
       })}
@@ -1998,14 +1971,6 @@ const saveEdit = async () => {
       {/* Edit status modal */}
       {editing&&(
         <Modal title={`แก้ไข ${editing.name}`} onClose={()=>setEditing(null)}>
-          {/* Unit info summary */}
-          <div style={{ background:editing.overflow?"#fffbeb":C.soft, border:`1px solid ${editing.overflow?"#fcd34d":C.line}`, borderRadius:8, padding:"10px 14px", marginBottom:18, fontSize:13, color:C.muted }}>
-            <strong style={{ color:C.ink }}>{editing.name}</strong>
-            {editing.overflow&&<span style={{ marginLeft:8, fontSize:11, background:C.amberBg, color:C.amber, borderRadius:99, padding:"1px 8px", fontWeight:600 }}>ยูนิตเสริม (Overflow)</span>}
-            <span style={{ marginLeft:8 }}>Zone {["A","B","C"][editing.zoneIdx]} · {editing.room}</span>
-          </div>
-
-          {/* Status */}
           <div style={{ marginBottom:16 }}>
             <label style={lblStyle}>สถานะ</label>
             <select value={editing.status} onChange={e=>setEditing({...editing,status:e.target.value})} style={inpStyle}>
@@ -2013,25 +1978,7 @@ const saveEdit = async () => {
               <option value="maintenance">ซ่อมบำรุง</option>
             </select>
           </div>
-
-          {/* Overflow toggle */}
-          <div style={{ marginBottom:16 }}>
-            <label style={lblStyle}>ประเภทยูนิต</label>
-            <div style={{ display:"flex", gap:10 }}>
-              {[{v:false,l:"ยูนิตหลัก (Regular)"},{v:true,l:"ยูนิตเสริม (Overflow)"}].map(opt=>(
-                <button key={String(opt.v)}
-                  onClick={()=>setEditing({...editing,overflow:opt.v})}
-                  style={{ flex:1, padding:"9px 14px", borderRadius:8, border:`1.5px solid ${editing.overflow===opt.v?(opt.v?C.amberLine:C.ink):C.line}`, background:editing.overflow===opt.v?(opt.v?C.amberBg:C.ink):"#fff", color:editing.overflow===opt.v?(opt.v?C.amber:"#fff"):C.muted, cursor:"pointer", fontFamily:"'Sarabun','Outfit',sans-serif", fontSize:13, fontWeight:500, transition:"all .15s" }}>
-                  {opt.l}
-                </button>
-              ))}
-            </div>
-            <p style={{ margin:"6px 0 0", fontSize:11.5, color:C.muted }}>
-              ยูนิตเสริมจะปรากฏในหน้าจองเมื่อยูนิตหลักทั้งหมดในโซนถูกจองครบ
-            </p>
-          </div>
-
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:4 }}>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <button style={btnStyle("ghost")} onClick={()=>setEditing(null)}>ยกเลิก</button>
             <button style={btnStyle("primary")} onClick={saveEdit}>บันทึก</button>
           </div>
@@ -2212,7 +2159,10 @@ export default function App() {
       const freshSessAdvs = { ...autoMap, ...data.sessionAdvisors };
       setAdvisors(data.advisors);
       setStudents(data.students);
-      setUnits(data.units);
+      setUnits(data.units.map(u => ({
+        ...u,
+        overflow: u.overflow === true || u.overflow === "TRUE" || u.overflow === "true",
+      })));
       setAdmins(data.admins);
       setSessAdvs(freshSessAdvs);
 
@@ -2261,11 +2211,11 @@ export default function App() {
     loadFromSheets();
   };
 
-const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost }) => {
+const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost, inheritUnit }) => {
     const newRes = {
       id: generateId("reservation", reservations), studentId:user.id, studentName:user.name,
       unitId:unit.id, date, session, patientName, hn, treatment,
-      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost
+      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost, inheritUnit: !!inheritUnit
     };
     setReservations(p=>[...p, newRes]);
     if (isGhost) notify(`👻 จองในฐานะ "ผี" — ยูนิต ${unit.name} — แจ้งผู้ดูแลระบบแล้ว`, true);
