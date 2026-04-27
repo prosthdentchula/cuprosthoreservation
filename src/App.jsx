@@ -2150,21 +2150,36 @@ export default function App() {
      All derived state (sessionAdvisors) is computed BEFORE any setState call,
      then every setter fires in the same synchronous block so React batches
      them into a single re-render — eliminating the stale-advisor flash. */
-  const loadFromSheets = async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await SheetsDB.syncAll();
-      const autoMap = buildSessionAdvisors(data.advisors);
-      const freshSessAdvs = { ...autoMap, ...data.sessionAdvisors };
-      setAdvisors(data.advisors);
-      setStudents(data.students);
-      setUnits(data.units.map(u => ({
-        ...u,
-        overflow: u.overflow === true || u.overflow === "TRUE" || u.overflow === "true",
-      })));
-      setAdmins(data.admins);
-      setSessAdvs(freshSessAdvs);
+ const loadFromSheets = async () => {
+  setLoading(true);
+  setLoadError(null);
+  try {
+    const data = await SheetsDB.syncAll();
+    const autoMap = buildSessionAdvisors(data.advisors);
+    const freshSessAdvs = { ...autoMap, ...data.sessionAdvisors };
+    
+    setAdvisors(data.advisors);
+    setStudents(data.students);
+    setAdmins(data.admins);
+    setSessAdvs(freshSessAdvs);
+
+    // FIX: Merge sheet units with default overflow units
+    const sheetUnits = data.units.map(u => ({
+      ...u,
+      overflow: u.overflow === true || u.overflow === "TRUE" || u.overflow === "true",
+    }));
+
+    // Check if the sheet is missing the overflow units (IDs 25-48)
+    const finalUnits = [...sheetUnits];
+    INIT_UNITS.filter(iu => iu.overflow).forEach(ovUnit => {
+      if (!finalUnits.find(u => u.id === ovUnit.id)) {
+        finalUnits.push(ovUnit); // Inject them back in if Sheets didn't have them
+      }
+    });
+
+    setUnits(finalUnits);
+
+    // ... rest of the function (auto-archive, etc.)
 
       // ── Auto-archive reservations older than 18 months ────────────────────
       const toArchive = data.reservations.filter(
