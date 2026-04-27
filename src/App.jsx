@@ -104,11 +104,26 @@ const next14Days  = Array.from({length:21},(_,i)=>{ const d=new Date(today); d.s
 const displayDate = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
 const shortDay    = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
 
-const INIT_UNITS = Array.from({length:24},(_,i)=>({
-  id: i+1, name:`Unit ${String(i+1).padStart(2,"0")}`,
-  zone: i<8?"A":i<16?"B":"C", room: i<8?"Zone A":i<16?"Zone B":"Zone C",
-  zoneIdx: i<8?0:i<16?1:2, status:[3,11,19].includes(i+1)?"maintenance":"active",
-}));
+const INIT_UNITS = [
+  // Regular units 1–24
+  ...Array.from({length:24},(_,i)=>({
+    id: i+1, name:`Unit ${String(i+1).padStart(2,"0")}`,
+    zone: i<8?"A":i<16?"B":"C", room: i<8?"Zone A":i<16?"Zone B":"Zone C",
+    zoneIdx: i<8?0:i<16?1:2, status:[3,11,19].includes(i+1)?"maintenance":"active",
+    overflow: false,
+  })),
+  // Overflow units: 8 per zone, ids 25–32 (A), 33–40 (B), 41–48 (C)
+  ...Array.from({length:24},(_,i)=>{
+    const zoneIdx = Math.floor(i/8);
+    const ovNum   = (i % 8) + 1;
+    const zLabel  = ["A","B","C"][zoneIdx];
+    return {
+      id: 25+i, name:`Unit ${zLabel}-OV${ovNum}`,
+      zone: zLabel, room:`Zone ${zLabel}`,
+      zoneIdx, status:"active", overflow: true,
+    };
+  }),
+];
 
 /* Auto-assign advisors for a given date+session.
    Zone A/B/C is determined purely by position in the advisors array —
@@ -358,7 +373,6 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   const [hn, setHn]                   = useState("");
   const [treatment, setTreatment]     = useState("");
   const [isGhost, setIsGhost]         = useState(false);
-  const [inheritUnit, setInheritUnit] = useState(false);
   const [err, setErr]                 = useState("");
   const [dupConfirmed, setDupConfirmed] = useState(false);
 
@@ -396,7 +410,7 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
     if (!patientName.trim()) return setErr("กรุณากรอกชื่อผู้ป่วย");
     if (!hn.trim())          return setErr("กรุณากรอก HN");
     if (!treatment.trim())   return setErr("กรุณากรอกข้อมูลการรักษา");
-    onConfirm({ patientName, hn, treatment, overbooked, isGhost, inheritUnit });
+    onConfirm({ patientName, hn, treatment, overbooked, isGhost });
   };
 
   return (
@@ -433,15 +447,6 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
             <span style={{ color:C.muted, marginLeft:6 }}>— ฉันไม่มีสิทธิ์จองในช่วงนี้ตามตาราง</span>
           </label>
         </div>
-        {/* ใช้ยูนิตต่อ checkbox */}
-        <div style={{ background:"#f0fdf4", border:`1px solid #bbf7d0`, borderRadius:8, padding:"12px 14px", display:"flex", alignItems:"flex-start", gap:12 }}>
-          <input type="checkbox" id="inherit-chk" checked={inheritUnit} onChange={e=>setInheritUnit(e.target.checked)}
-            style={{ width:17, height:17, marginTop:2, accentColor:C.green, cursor:"pointer", flexShrink:0 }} />
-          <label htmlFor="inherit-chk" style={{ cursor:"pointer", fontSize:13.5 }}>
-            <span style={{ fontWeight:600, color:C.green }}>🔗 ใช้ยูนิตต่อ</span>
-            <span style={{ color:C.muted, marginLeft:6 }}>— นิสิตคนอื่นจองยูนิตนี้ไว้ก่อน และฉันใช้ยูนิตต่อจากเขา</span>
-          </label>
-        </div>
       </div>
       {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
@@ -474,7 +479,12 @@ function DaySummaryPanel({ reservations, units, advisors, date, session, session
         </span>
         <div style={{ flex:1, height:1, background:C.line }} />
         <span style={{ fontSize:12, color:C.muted, background:C.soft, borderRadius:99, padding:"3px 10px", border:`1px solid ${C.line}` }}>
-          {booked.length} / {units.filter(u=>u.status==="active").length} ยูนิต
+          {booked.length} / {units.filter(u=>u.status==="active"&&!u.overflow).length} ยูนิต
+          {booked.filter(r=>{ const u=units.find(x=>x.id===r.unitId); return u?.overflow; }).length>0 &&
+            <span style={{ color:C.amber, marginLeft:4 }}>
+              +{booked.filter(r=>{ const u=units.find(x=>x.id===r.unitId); return u?.overflow; }).length} เสริม
+            </span>
+          }
         </span>
       </div>
 
@@ -511,7 +521,6 @@ function DaySummaryPanel({ reservations, units, advisors, date, session, session
                   {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
                   <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
                   {r.isGhost && <span style={{ fontSize:11 }}>👻</span>}
-                  {r.inheritUnit && <span style={{ fontSize:11 }}>🔗</span>}
                   {r.overbooked && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
                 </div>
                 {/* Zone */}
@@ -562,8 +571,30 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
   useEffect(()=>{ if (!sessions.includes(session)) setSess(sessions[0]||"morning"); },[date]);
 
   const bookings    = (uid) => reservations.filter(r=>r.date===date&&r.session===session&&r.unitId===uid&&r.status!=="cancelled");
-  const activeUnits = units.filter(u=>u.status==="active");
+  const activeUnits = units.filter(u=>u.status==="active"&&!u.overflow);
   const totalBooked = activeUnits.filter(u=>bookings(u.id).length>0).length;
+
+  /* For each zone, compute how many overflow units to show.
+     Rule: show overflow unit N once all N-1 overflow units before it are booked
+     AND all regular units in the zone are booked.
+     i.e. overflow slot 1 appears when regular 8/8 full,
+          overflow slot 2 appears when OV1 is booked, etc.           */
+  const visibleUnitsForZone = (z) => {
+    const regular  = units.filter(u=>u.zoneIdx===z&&!u.overflow);
+    const overflow = units.filter(u=>u.zoneIdx===z&&u.overflow).sort((a,b)=>a.id-b.id);
+    const regularBookedCount = regular.filter(u=>u.status==="active"&&bookings(u.id).length>0).length;
+    const regularActiveCount = regular.filter(u=>u.status==="active").length;
+    const allRegularFull = regularBookedCount >= regularActiveCount;
+    if (!allRegularFull) return regular; // no overflow shown yet
+    // Show overflow units progressively: show next one when previous is booked
+    let visibleOverflow = [];
+    for (let i=0; i<overflow.length; i++) {
+      visibleOverflow.push(overflow[i]);
+      // Stop after revealing one empty overflow slot
+      if (bookings(overflow[i].id).length === 0) break;
+    }
+    return [...regular, ...visibleOverflow];
+  };
   const key         = `${date}__${session}`;
   const advIds      = sessionAdvisors[key]||["","",""];
   const closed = isStudent && isBookingClosed(date, session);
@@ -592,7 +623,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
         </h2>
         <p style={{ margin:0, color:C.muted, fontSize:14 }}>
           {canBook
-            ? "24 ยูนิต · 3 โซนอาจารย์นิเทศ (8 ยูนิต/โซน) · คลิกยูนิตเพื่อจอง"
+            ? "24 ยูนิต · 3 โซนอาจารย์นิเทศ (8 ยูนิต/โซน) · คลิกยูนิตเพื่อจอง · ยูนิตเสริมจะปรากฏเมื่อโซนเต็ม"
             : "24 ยูนิต · 3 โซนอาจารย์นิเทศ (8 ยูนิต/โซน) · คลิกยูนิตเพื่อดูรายละเอียด (อ่านอย่างเดียว)"}
         </p>
       </div>
@@ -636,20 +667,33 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
           );
         })}
         <div style={{ marginLeft:"auto", display:"flex", gap:10 }}>
-          <span style={{ fontSize:13, color:C.green, background:C.greenBg, borderRadius:8, padding:"6px 12px" }}>● {activeUnits.length-totalBooked} ว่าง</span>
-          <span style={{ fontSize:13, color:C.amber, background:C.amberBg, borderRadius:8, padding:"6px 12px" }}>● {totalBooked} จองแล้ว</span>
+          {(() => {
+            const allVisible = [0,1,2].flatMap(z=>visibleUnitsForZone(z)).filter(u=>u.status==="active");
+            const bookedCount = allVisible.filter(u=>bookings(u.id).length>0).length;
+            return <>
+              <span style={{ fontSize:13, color:C.green, background:C.greenBg, borderRadius:8, padding:"6px 12px" }}>● {allVisible.length-bookedCount} ว่าง</span>
+              <span style={{ fontSize:13, color:C.amber, background:C.amberBg, borderRadius:8, padding:"6px 12px" }}>● {bookedCount} จองแล้ว</span>
+            </>;
+          })()}
         </div>
       </div>
 
       {sessions.includes(session) ? [0,1,2].map(z=>{
-        const zUnits = units.filter(u=>u.zoneIdx===z);
+        const zUnits = visibleUnitsForZone(z);
         const adv    = advisors.find(a=>a.id===advIds[z]);
+        const regularCount  = units.filter(u=>u.zoneIdx===z&&!u.overflow&&u.status==="active").length;
+        const overflowShown = zUnits.filter(u=>u.overflow).length;
         return (
           <div key={z} style={{ marginBottom:24 }}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
               <span style={{ fontSize:13, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:0.5, whiteSpace:"nowrap" }}>
                 Zone {["A","B","C"][z]} — {adv?adv.name:"ยังไม่ได้กำหนดอาจารย์"}
               </span>
+              {overflowShown>0&&(
+                <span style={{ fontSize:11, background:C.amberBg, color:C.amber, borderRadius:99, padding:"2px 9px", fontWeight:600, flexShrink:0 }}>
+                  +{overflowShown} ยูนิตเสริม
+                </span>
+              )}
               <div style={{ flex:1, height:1, background:C.line }} />
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))", gap:9 }}>
@@ -658,29 +702,33 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
                 const isBooked = bks.length>0;
                 const isOver   = bks.length>1;
                 const isMaint  = unit.status==="maintenance";
+                const isOv     = !!unit.overflow;
                 const isMine   = bks.some(b=>b.studentId===user.id);
                 const blockClick = isMaint || (isStudent && closed);
-                const borderColor = isMaint?C.line:isOver?C.amberLine:isMine?C.greenLine:isBooked?"#fed7aa":C.line;
+                const borderColor = isMaint?C.line:isOver?C.amberLine:isMine?C.greenLine:isOv&&!isBooked?"#fcd34d":isBooked?"#fed7aa":C.line;
                 return (
                   <div key={unit.id}
                     onClick={()=>handleUnitClick(unit)}
-                    style={{ background:"#fff", border:`1px solid ${borderColor}`, borderRadius:10, padding:"13px 15px", cursor:blockClick?"not-allowed":"pointer", opacity:isMaint?0.5:1, transition:"box-shadow .15s" }}
+                    style={{ background: isOv?"#fffbeb":"#fff", border:`1px solid ${borderColor}`, borderRadius:10, padding:"13px 15px", cursor:blockClick?"not-allowed":"pointer", opacity:isMaint?0.5:1, transition:"box-shadow .15s" }}
                     onMouseEnter={e=>{if(!blockClick)e.currentTarget.style.boxShadow="0 4px 14px rgba(0,0,0,0.08)";}}
                     onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                      <span style={{ fontWeight:600, fontSize:14.5 }}>{unit.name}</span>
+                      <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
+                        <span style={{ fontWeight:600, fontSize:14.5 }}>{unit.name}</span>
+                        {isOv&&<span style={{ fontSize:9.5, color:C.amber, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3 }}>ยูนิตเสริม</span>}
+                      </div>
                       {isMaint&&<Badge t="maintenance">ซ่อมบำรุง</Badge>}
                       {!isMaint&&isMine&&<Badge t="confirmed">ของฉัน</Badge>}
                       {!isMaint&&!isMine&&isOver&&<Badge t="overbooked">Over</Badge>}
-                      {!isMaint&&!isMine&&!isOver&&isBooked&&<span style={{ width:8, height:8, borderRadius:"50%", background:"#f97316", display:"block", marginTop:5 }} />}
-                      {!isMaint&&!isBooked&&<span style={{ width:8, height:8, borderRadius:"50%", background:"#10b981", display:"block", marginTop:5 }} />}
+                      {!isMaint&&!isMine&&!isOver&&isBooked&&<span style={{ width:8, height:8, borderRadius:"50%", background:"#f97316", display:"block", marginTop:5, flexShrink:0 }} />}
+                      {!isMaint&&!isBooked&&<span style={{ width:8, height:8, borderRadius:"50%", background: isOv?"#f59e0b":"#10b981", display:"block", marginTop:5, flexShrink:0 }} />}
                     </div>
                     {isBooked
                       ? <p style={{ margin:0, fontSize:11.5, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                           {bks[0].inheritUnit && <span style={{ marginRight:3 }}>🔗</span>}
                           {bks[0].patientName}
                         </p>
-                      : <p style={{ margin:0, fontSize:11.5, color:C.faint }}>ว่าง</p>}
+                      : <p style={{ margin:0, fontSize:11.5, color: isOv?C.amber:C.faint }}>{isOv?"พร้อมรับการจอง":"ว่าง"}</p>}
                   </div>
                 );
               })}
@@ -798,7 +846,6 @@ function MyReservationsPage({ reservations, user, units, sessionAdvisors, adviso
                     <Badge t={r.session}>{r.session==="morning"?"ช่วงเช้า":"ช่วงบ่าย"}</Badge>
                     <Badge t={r.overbooked?"overbooked":r.status}>{r.overbooked?"⚠ Overbook":r.status==="confirmed"?"ยืนยันแล้ว":r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"}</Badge>
                     {r.isGhost&&<span style={{ background:"#fdf4ff", color:"#7c3aed", borderRadius:99, padding:"2px 9px", fontSize:11, fontWeight:600 }}>👻 ผี</span>}
-                    {r.inheritUnit&&<span style={{ background:"#f0fdf4", color:C.green, borderRadius:99, padding:"2px 9px", fontSize:11, fontWeight:600 }}>🔗 ใช้ยูนิตต่อ</span>}
                   </div>
                   <p style={{ margin:0, fontSize:13, color:C.muted }}>{displayDate(r.date)} · {r.patientName} · {r.hn}</p>
                   <p style={{ margin:"2px 0 0", fontSize:12.5, color:C.faint, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.treatment}</p>
@@ -826,7 +873,6 @@ function MyReservationsPage({ reservations, user, units, sessionAdvisors, adviso
               ["สถานะ",detail.r.status==="confirmed"?"ยืนยันแล้ว":detail.r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"],
               ["Overbooked",detail.r.overbooked?"⚠ ใช่ — แจ้งผู้ดูแลแล้ว":"ไม่มี"],
               ["ผี",detail.r.isGhost?"👻 ใช่":"ไม่ใช่"],
-              ["ใช้ยูนิตต่อ",detail.r.inheritUnit?"🔗 ใช่ — ต่อจากนิสิตอื่น":"ไม่ใช่"],
             ].map(([k,v])=>(
               <div key={k} style={{ display:"flex", paddingBottom:10, borderBottom:`1px solid ${C.line}` }}>
                 <span style={{ width:160, flexShrink:0, fontSize:12.5, color:C.muted, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3 }}>{k}</span>
@@ -946,7 +992,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         const uCell  = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}${b.inheritUnit?' <span style="color:#065f46;font-size:10px">🔗ต่อ</span>':""}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
+        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -2150,11 +2196,11 @@ export default function App() {
     loadFromSheets();
   };
 
-const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost, inheritUnit }) => {
+const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost }) => {
     const newRes = {
       id: generateId("reservation", reservations), studentId:user.id, studentName:user.name,
       unitId:unit.id, date, session, patientName, hn, treatment,
-      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost, inheritUnit: !!inheritUnit
+      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost
     };
     setReservations(p=>[...p, newRes]);
     if (isGhost) notify(`👻 จองในฐานะ "ผี" — ยูนิต ${unit.name} — แจ้งผู้ดูแลระบบแล้ว`, true);
