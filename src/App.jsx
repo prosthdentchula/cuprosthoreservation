@@ -540,7 +540,7 @@ function DaySummaryPanel({ reservations, units, advisors, date, session, session
   {isMe && <span style={{ fontSize:10, background:C.accent, color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:600, flexShrink:0 }}>ฉัน</span>}
   <span style={{ fontWeight:600, fontSize:13 }}>{unit?.name ?? `Unit ${r.unitId}`}</span>
   {r.isGhost && <span title="Ghost Booking">👻</span>}
-  {r.inheritUnit && <span title="Inherit Unit">🔗</span>} {/* Add this line */}
+  {r.inheritUnit && <span title="Inherit Unit">🔗</span>}
   {r.overbooked && !r.inheritUnit && <span style={{ fontSize:11, color:C.amber }}>⚠</span>}
 </div>
                 {/* Zone */}
@@ -971,16 +971,13 @@ function EditBookingModal({ reservation, onSave, onClose }) {
 }
 
 /* ═══ PRINT SESSION SUMMARY ══════════════════════════════════════════════════════
-   iOS-compatible print using @media print + a hidden #__print_root__ div.
-   Strategy: inject summary HTML + a <style> that hides everything EXCEPT
-   #__print_root__ during printing. Call window.print() synchronously inside
-   the click handler — no popup, no iframe, no setTimeout. After the print
-   dialog closes (via the afterprint event) the injected nodes are removed.
+   Layout: each zone gets its own full-width row (stacked vertically).
+   Dynamic font scaling shrinks the base font-size until all content fits
+   within a single landscape A4 page (297 × 210 mm usable area ≈ 277 × 194 mm
+   after margins).
 
-   This works on iOS Safari because:
-     • window.print() is called in the same synchronous tick as the user tap
-     • No new window / popup needed — the current document IS the print source
-     • @media print CSS controls exactly what appears on the printed page
+   iOS-compatible: window.print() is called synchronously inside the click
+   handler. The afterprint event cleans up injected nodes afterwards.
    ════════════════════════════════════════════════════════════════════════════════ */
 function printSessionSummary({ dateStr, session, reservations, units, advisors, sessionAdvisors }) {
   const key    = `${dateStr}__${session}`;
@@ -992,6 +989,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
   const sessionLabel = session === "morning" ? "ช่วงเช้า 09:00–12:00" : "ช่วงบ่าย 13:00–16:00";
   const printDate    = displayDate(dateStr);
 
+  // Build one full-width zone block per zone
   const zoneSections = [0, 1, 2].map(zIdx => {
     const zoneName     = ["A","B","C"][zIdx];
     const adv          = advisors.find(a => a.id === advIds[zIdx]);
@@ -1005,15 +1003,14 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     const unitRows = allZoneUnits.map(unit => {
       const bks     = zoneRows.filter(r => r.unitId === unit.id);
       const isMaint = unit.status === "maintenance";
-      if (isMaint) return "";   // skip maintenance units
-      if (bks.length === 0) return "";  // skip empty units
+      if (isMaint || bks.length === 0) return "";
       return bks.map((b, i) => {
-        const isOver    = bks.length > 1;
+        const isOver      = bks.length > 1;
         const inheritMark = b.inheritUnit ? `<span class="p-inh">🔗</span>` : "—";
-        const uCell  = i === 0
+        const uCell = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
+        return `<tr class="${isOver?"p-over":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d p-treatment">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -1023,46 +1020,48 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
 
     return `<div class="p-zone">
       <div class="p-zh">
-        <span class="p-adv">${advName}</span>
-        <span class="p-ztag">Zone ${zoneName} · ยูนิต ${zIdx*8+1}–${zIdx*8+8}</span>
+        <span class="p-adv">Zone ${zoneName} — ${advName}</span>
+        <span class="p-ztag">ยูนิต ${zIdx*8+1}–${zIdx*8+8}</span>
         <span class="p-pill p-pb">${booked} จอง</span>
         <span class="p-pill p-pa">${avail} ว่าง</span>
         ${overCt > 0 ? `<span class="p-pill p-po">${overCt} Over</span>` : ""}
       </div>
-      <table class="p-tbl"><thead><tr>
-        <th class="p-th" style="width:58px">ยูนิต</th>
-        <th class="p-th" style="width:120px">นิสิต</th>
-        <th class="p-th" style="width:110px">ผู้ป่วย</th>
-        <th class="p-th" style="width:80px">HN</th>
-        <th class="p-th">การรักษา / หัตถการ</th>
-        <th class="p-th" style="width:44px;text-align:center">สถานะ</th>
-        <th class="p-th" style="width:50px;text-align:center">ต่อยูนิต</th>
-      </tr></thead><tbody>${unitRows}</tbody></table>
+      ${unitRows
+        ? `<table class="p-tbl"><thead><tr>
+            <th class="p-th" style="width:64px">ยูนิต</th>
+            <th class="p-th" style="width:16%">นิสิต</th>
+            <th class="p-th" style="width:16%">ผู้ป่วย</th>
+            <th class="p-th" style="width:10%">HN</th>
+            <th class="p-th">การรักษา / หัตถการ</th>
+            <th class="p-th" style="width:44px;text-align:center">สถานะ</th>
+            <th class="p-th" style="width:52px;text-align:center">ต่อยูนิต</th>
+           </tr></thead><tbody>${unitRows}</tbody></table>`
+        : `<p class="p-empty">ไม่มีการจองในโซนนี้</p>`}
     </div>`;
   }).join("");
 
   const bodyHTML = `
     <div class="p-hdr">
-      <div><h1 class="p-h1">🦷 CUProstho — สรุปการจองยูนิต</h1><p class="p-sub">${printDate} · ${sessionLabel}</p></div>
+      <div>
+        <h1 class="p-h1">🦷 CUProstho — สรุปการจองยูนิต</h1>
+        <p class="p-sub">${printDate} · ${sessionLabel}</p>
+      </div>
       <div class="p-stats">
         <div class="p-sbox"><strong>${rows.length}</strong><span>จองทั้งหมด</span></div>
         <div class="p-sbox"><strong>${rows.filter(r=>r.overbooked).length}</strong><span>Overbooked</span></div>
-        <div class="p-sbox"><strong>${24-rows.length}</strong><span>ว่าง</span></div>
+        <div class="p-sbox"><strong>${24 - rows.length}</strong><span>ว่าง</span></div>
       </div>
     </div>
-    <div class="p-zones">
-    ${zoneSections}
-    </div>
+    <div class="p-zones">${zoneSections}</div>
     <div class="p-foot">
       <span>พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")}</span>
       <span>CUProstho · คณะทันตแพทยศาสตร์</span>
     </div>`;
 
-  // ── Inject print stylesheet ───────────────────────────────────────────────
+  // ── Inject print stylesheet + root ───────────────────────────────────────
   const STYLE_ID = "__print_style__";
   const ROOT_ID  = "__print_root__";
 
-  // Remove any leftovers from a previous print
   document.getElementById(STYLE_ID)?.remove();
   document.getElementById(ROOT_ID)?.remove();
 
@@ -1077,41 +1076,52 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     #${ROOT_ID} {
       display: none;
       font-family: 'Sarabun', Arial, sans-serif;
-      font-size: 7.5pt;
+      /* font-size set dynamically by fitToPage() below */
+      font-size: 8pt;
       color: #16191f;
       box-sizing: border-box;
+      width: 277mm; /* landscape A4 printable width (297mm - 2×10mm) */
     }
     #${ROOT_ID} * { box-sizing: border-box; }
-    #${ROOT_ID} .p-hdr { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #16191f; padding-bottom:4px; margin-bottom:6px; }
-    #${ROOT_ID} .p-h1  { font-size:11pt; font-weight:700; margin:0 0 1px; }
-    #${ROOT_ID} .p-sub { font-size:7.5pt; color:#6b7280; margin:0; }
-    #${ROOT_ID} .p-stats { display:flex; gap:6px; }
-    #${ROOT_ID} .p-sbox { background:#f4f5f7; border-radius:4px; padding:2px 8px; text-align:center; min-width:48px; }
-    #${ROOT_ID} .p-sbox strong { display:block; font-size:11pt; line-height:1.1; font-weight:700; }
-    #${ROOT_ID} .p-sbox span   { font-size:6.5pt; color:#6b7280; }
-    /* 3-column zone layout for landscape */
-    #${ROOT_ID} .p-zones { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
-    #${ROOT_ID} .p-zone { break-inside:avoid; }
-    #${ROOT_ID} .p-zh   { background:#16191f; color:#fff; padding:4px 8px; border-radius:4px 4px 0 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-    #${ROOT_ID} .p-adv  { font-size:8.5pt; font-weight:700; flex:1; }
-    #${ROOT_ID} .p-ztag { font-size:6.5pt; opacity:0.65; white-space:nowrap; }
-    #${ROOT_ID} .p-pill { border-radius:99px; padding:1px 6px; font-size:6.5pt; font-weight:600; white-space:nowrap; }
+
+    /* ── Header ── */
+    #${ROOT_ID} .p-hdr { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #16191f; padding-bottom:0.3em; margin-bottom:0.5em; }
+    #${ROOT_ID} .p-h1  { font-size:1.35em; font-weight:700; margin:0 0 0.1em; }
+    #${ROOT_ID} .p-sub { font-size:0.9em; color:#6b7280; margin:0; }
+    #${ROOT_ID} .p-stats { display:flex; gap:0.5em; }
+    #${ROOT_ID} .p-sbox { background:#f4f5f7; border-radius:4px; padding:0.2em 0.8em; text-align:center; min-width:52px; }
+    #${ROOT_ID} .p-sbox strong { display:block; font-size:1.3em; line-height:1.1; font-weight:700; }
+    #${ROOT_ID} .p-sbox span   { font-size:0.78em; color:#6b7280; }
+
+    /* ── Zones: stacked full-width rows ── */
+    #${ROOT_ID} .p-zones { display:flex; flex-direction:column; gap:0.55em; }
+    #${ROOT_ID} .p-zone  { break-inside:avoid; width:100%; }
+
+    /* Zone header bar */
+    #${ROOT_ID} .p-zh   { background:#16191f; color:#fff; padding:0.3em 0.7em; border-radius:4px 4px 0 0; display:flex; align-items:center; gap:0.6em; }
+    #${ROOT_ID} .p-adv  { font-size:1em; font-weight:700; flex:1; }
+    #${ROOT_ID} .p-ztag { font-size:0.78em; opacity:0.6; white-space:nowrap; }
+    #${ROOT_ID} .p-pill { border-radius:99px; padding:0.1em 0.55em; font-size:0.78em; font-weight:600; white-space:nowrap; }
     #${ROOT_ID} .p-pb   { background:#344e78; color:#fff; }
     #${ROOT_ID} .p-pa   { background:#d1fae5; color:#065f46; }
     #${ROOT_ID} .p-po   { background:#fef3c7; color:#92400e; }
-    #${ROOT_ID} .p-tbl  { width:100%; border-collapse:collapse; font-size:7pt; border:1px solid #e5e7eb; border-top:none; }
+
+    /* Zone table — full width */
+    #${ROOT_ID} .p-tbl  { width:100%; border-collapse:collapse; border:1px solid #e5e7eb; border-top:none; }
     #${ROOT_ID} .p-tbl thead tr { background:#f9fafb; }
-    #${ROOT_ID} .p-th   { padding:2px 6px; text-align:left; font-weight:600; font-size:6.5pt; text-transform:uppercase; letter-spacing:0.2px; border-bottom:1px solid #e5e7eb; color:#6b7280; }
-    #${ROOT_ID} .p-d    { padding:2px 6px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-u    { padding:2px 6px; font-weight:600; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-c    { padding:2px 6px; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-it   { padding:2px 6px; font-style:italic; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-va   { padding:2px 6px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
-    #${ROOT_ID} .p-over  { background:#fef3c7; }
-    #${ROOT_ID} .p-ov    { border-top:2px solid #fcd34d; }
-    #${ROOT_ID} .p-ovl   { font-size:6pt; color:#92400e; font-weight:700; }
-    #${ROOT_ID} .p-inh   { font-size:7pt; color:#d97706; font-weight:600; }
-    #${ROOT_ID} .p-foot  { margin-top:5px; font-size:6.5pt; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:3px; }
+    #${ROOT_ID} .p-th   { padding:0.22em 0.55em; text-align:left; font-weight:600; font-size:0.8em; text-transform:uppercase; letter-spacing:0.2px; border-bottom:1px solid #e5e7eb; color:#6b7280; white-space:nowrap; }
+    #${ROOT_ID} .p-d    { padding:0.22em 0.55em; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-treatment { max-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #${ROOT_ID} .p-u    { padding:0.22em 0.55em; font-weight:600; border-bottom:1px solid #f0f0f0; vertical-align:middle; white-space:nowrap; }
+    #${ROOT_ID} .p-c    { padding:0.22em 0.55em; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+    #${ROOT_ID} .p-over { background:#fef3c7; }
+    #${ROOT_ID} .p-ov   { border-top:2px solid #fcd34d; }
+    #${ROOT_ID} .p-ovl  { font-size:0.75em; color:#92400e; font-weight:700; }
+    #${ROOT_ID} .p-inh  { color:#d97706; font-weight:600; }
+    #${ROOT_ID} .p-empty{ margin:0; padding:0.4em 0.7em; font-size:0.85em; color:#9ca3af; border:1px solid #e5e7eb; border-top:none; }
+
+    /* Footer */
+    #${ROOT_ID} .p-foot { margin-top:0.4em; font-size:0.78em; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:0.25em; }
   `;
 
   const root = document.createElement("div");
@@ -1121,7 +1131,30 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
   document.head.appendChild(style);
   document.body.appendChild(root);
 
-  // Clean up after printing (afterprint fires on all modern browsers + iOS 13+)
+  /* ── Dynamic font scaling ─────────────────────────────────────────────────
+     A4 landscape printable height with 8mm top+bottom margins = 210 - 16 = 194 mm.
+     We convert to px using 96 dpi (browser standard): 194mm × (96/25.4) ≈ 733px.
+     We make the root visible (off-screen), measure its scrollHeight, then
+     shrink the font-size by 0.5pt steps until it fits, down to a floor of 5pt. */
+  root.style.display  = "block";
+  root.style.position = "absolute";
+  root.style.left     = "-9999px";
+  root.style.top      = "0";
+
+  const PAGE_H_PX = 194 * (96 / 25.4); // ≈ 733 px
+  let   fontSize  = 8;                  // starting pt
+
+  while (root.scrollHeight > PAGE_H_PX && fontSize > 5) {
+    fontSize -= 0.5;
+    root.style.fontSize = fontSize + "pt";
+  }
+
+  root.style.position = "";
+  root.style.left     = "";
+  root.style.top      = "";
+  root.style.display  = "none";
+
+  // Clean up after printing
   const cleanup = () => {
     style.remove();
     root.remove();
