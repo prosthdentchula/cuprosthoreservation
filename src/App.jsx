@@ -1841,9 +1841,24 @@ try {
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{s.username}</td>
                   <td style={{ padding:"11px 16px" }}><span style={{ background:C.soft, borderRadius:6, padding:"2px 8px", fontFamily:"monospace", fontSize:12 }}>{s.password}</span></td>
                   <td style={{ padding:"11px 16px" }}><Badge t="active">{PROGRAM_LABELS[s.program]||s.program}</Badge></td>
-                 <td style={{ padding:"11px 16px", fontSize:13 }}>
+         <td style={{ padding:"11px 16px", fontSize:13 }}>
   {s.enrollYear ? (
-    <span title={`รุ่น ${s.enrollYear}`}>ปีที่ {getClassYear(s.enrollYear)}</span>
+    <div>
+      <span title={`รุ่น ${s.enrollYear}`} style={{ fontWeight:500 }}>
+        ปีที่ {getClassYear(s.enrollYear)}
+      </span>
+      <div style={{ marginTop:3, display:"flex", alignItems:"center", gap:4 }}>
+        <span style={{ fontSize:10, color:C.muted }}>→ ปีที่ {getClassYear(s.enrollYear)+1} ใน</span>
+        <span style={{
+          fontSize:10.5, fontWeight:600,
+          background: COUNTDOWN_TO_ADV === "วันนี้!" ? C.greenBg : C.amberBg,
+          color:       COUNTDOWN_TO_ADV === "วันนี้!" ? C.green   : C.amber,
+          borderRadius:99, padding:"1px 7px",
+        }}>
+          {COUNTDOWN_TO_ADV === "วันนี้!" ? "🎉 วันนี้!" : `⏳ ${COUNTDOWN_TO_ADV}`}
+        </span>
+      </div>
+    </div>
   ) : <span style={{ color:C.faint }}>—</span>}
 </td>
                   <td style={{ padding:"11px 16px" }}>
