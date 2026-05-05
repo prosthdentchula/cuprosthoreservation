@@ -100,6 +100,21 @@ function getClassYear(enrollYear) {
   const academicYear = today >= aug1 ? yr : yr - 1; // current academic year start
   return academicYear - Number(enrollYear) + 1;
 }
+/* ── Countdown to next Aug 1 advancement ───────────────────────────────────── */
+function getCountdownToNextAug1() {
+  const now = new Date();
+  let nextAug1 = new Date(now.getFullYear(), 7, 1);
+  if (now >= nextAug1) nextAug1 = new Date(now.getFullYear() + 1, 7, 1);
+  const diffMs   = nextAug1 - now;
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return "วันนี้!";
+  const months = Math.floor(diffDays / 30);
+  const days   = diffDays % 30;
+  if (months === 0) return `${diffDays} วัน`;
+  if (days   === 0) return `${months} เดือน`;
+  return `${months} เดือน ${days} วัน`;
+}
+const COUNTDOWN_TO_ADV = getCountdownToNextAug1();
 const next14Days  = Array.from({length:21},(_,i)=>{ const d=new Date(today); d.setDate(d.getDate()+i); return getLocalISO(d); }).filter(d=>!isWeekend(d)).slice(0,14);
 const displayDate = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
 const shortDay    = (s) => new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
@@ -1826,11 +1841,11 @@ try {
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{s.username}</td>
                   <td style={{ padding:"11px 16px" }}><span style={{ background:C.soft, borderRadius:6, padding:"2px 8px", fontFamily:"monospace", fontSize:12 }}>{s.password}</span></td>
                   <td style={{ padding:"11px 16px" }}><Badge t="active">{PROGRAM_LABELS[s.program]||s.program}</Badge></td>
-                  <td style={{ padding:"11px 16px", fontSize:13 }}>
-                    {s.enrollYear ? (
-                      <span title={`รุ่น ${s.enrollYear}`}>ปีที่ {getClassYear(s.enrollYear)}</span>
-                    ) : <span style={{ color:C.faint }}>—</span>}
-                  </td>
+                 <td style={{ padding:"11px 16px", fontSize:13 }}>
+  {s.enrollYear ? (
+    <span title={`รุ่น ${s.enrollYear}`}>ปีที่ {getClassYear(s.enrollYear)}</span>
+  ) : <span style={{ color:C.faint }}>—</span>}
+</td>
                   <td style={{ padding:"11px 16px" }}>
                     <div style={{ display:"flex", gap:8 }}>
                       <button style={{ ...btnStyle("ghost"), padding:"5px 12px", fontSize:12 }} onClick={()=>setModal({type:"student",item:s})}>แก้ไข</button>
