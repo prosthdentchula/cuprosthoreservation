@@ -2243,7 +2243,7 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
       [monthKey]: { ...prevMonth, [dow]: newDowData },
     };
     setMonthlyLineups(newLineups);
-    setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
+    setSessAdvs(() => buildSessionAdvisors(advisors, newLineups));
     const dayLabel = DAYS.find(d=>d.dow===dow)?.label || "";
     const sessLabel = sess === "morning" ? "เช้า" : "บ่าย";
     notify(`บันทึก ${dayLabel} ${sessLabel} — ${monthLabel} (กำลังบันทึกพื้นหลัง)`);
@@ -2269,7 +2269,7 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
       [monthKey]: { ...prevMonth, [dow]: newDowData },
     };
     setMonthlyLineups(newLineups);
-    setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
+    setSessAdvs(() => buildSessionAdvisors(advisors, newLineups));
     try {
       const fullDow = newLineups[monthKey][dow];
       await SheetsDB.saveMonthlyLineup(monthKey, dow, fullDow.morning || ["","",""], fullDow.afternoon || ["","",""]);
