@@ -158,15 +158,18 @@ function autoAssignAdvisors(dateStr, session, advisors) {
 }
 
 /* Build session advisor map for next 14 days from advisor schedules.
-   Monthly lineup takes priority over auto-assign; per-day overrides win over both. */
+   Priority: per-day override > monthly lineup (by dow) > auto-assign.
+   monthlyLineups shape: { "YYYY-MM": { 1: { morning:[...], afternoon:[...] }, 2:{...}, ... } }
+   dow: 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri */
 function buildSessionAdvisors(advisors, monthlyLineups = {}) {
   const map = {};
   next14Days.forEach(d => {
     getAvailableSessions(d).forEach(s => {
-      const monthKey = d.slice(0, 7); // "YYYY-MM"
-      const lineup = monthlyLineups[monthKey];
-      if (lineup && lineup[s] && lineup[s].some(id => id)) {
-        map[`${d}__${s}`] = [...lineup[s]];
+      const monthKey = d.slice(0, 7);           // "YYYY-MM"
+      const dow      = getDow(d);               // 0–6, weekdays are 1–5
+      const dowSlot  = monthlyLineups[monthKey]?.[dow];
+      if (dowSlot && dowSlot[s] && dowSlot[s].some(id => id)) {
+        map[`${d}__${s}`] = [...dowSlot[s]];
       } else {
         map[`${d}__${s}`] = autoAssignAdvisors(d, s, advisors);
       }
@@ -2164,220 +2167,304 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
 }
 
 /* ═══ ADMIN MONTHLY LINEUP ═══════════════════════════════════════════════════════
-   Admins set per-session zone assignments for up to 3 months ahead.
-   Priority: per-day override > monthly lineup > auto-assign from schedule.
+   Admins set per-session zone assignments per day-of-week, per month, up to 3 months ahead.
+   Shape: monthlyLineups["YYYY-MM"][dow]["morning"|"afternoon"] = [zoneA, zoneB, zoneC]
+   Priority: per-day override > monthly lineup (dow) > auto-assign from schedule.
    ══════════════════════════════════════════════════════════════════════════════ */
 function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, setSessAdvs, notify }) {
   const baseYear  = today.getFullYear();
   const baseMonth = today.getMonth();
-
   const [curOffset, setCurOffset] = useState(0);
+  // selectedDow: 1=Mon…5=Fri (null = show weekly overview)
+  const [selectedDow, setSelectedDow] = useState(1);
 
-  const curDate  = new Date(baseYear, baseMonth + curOffset, 1);
-  const curYear  = curDate.getFullYear();
-  const curMonth = curDate.getMonth();
+  const curDate   = new Date(baseYear, baseMonth + curOffset, 1);
+  const curYear   = curDate.getFullYear();
+  const curMonth  = curDate.getMonth();
 
-  const MONTH_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
-                    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
-  const monthKey = `${curYear}-${String(curMonth + 1).padStart(2, "0")}`;
-  const monthLabel = `${MONTH_TH[curMonth]} ${curYear + 543}`;
-
+  const MONTH_TH  = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+                     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+  const monthKey  = `${curYear}-${String(curMonth + 1).padStart(2, "0")}`;
+  const monthLabel= `${MONTH_TH[curMonth]} ${curYear + 543}`;
   const offsetLabel = ["(เดือนนี้)","(เดือนหน้า)","(อีก 2 เดือน)","(อีก 3 เดือน — ไกลสุด)"][curOffset];
 
-  const existing = monthlyLineups[monthKey] || { morning: ["","",""], afternoon: ["","",""] };
-  const [draftMorning,   setDraftMorning]   = useState([...existing.morning]);
-  const [draftAfternoon, setDraftAfternoon] = useState([...existing.afternoon]);
+  // DOW meta — dow 3 (พ) has no afternoon
+  const DAYS = [
+    { dow:1, label:"จันทร์",    short:"จ",  sessions:["morning","afternoon"] },
+    { dow:2, label:"อังคาร",   short:"อ",  sessions:["morning","afternoon"] },
+    { dow:3, label:"พุธ",      short:"พ",  sessions:["morning"] },
+    { dow:4, label:"พฤหัสบดี", short:"พฤ", sessions:["morning","afternoon"] },
+    { dow:5, label:"ศุกร์",    short:"ศ",  sessions:["morning","afternoon"] },
+  ];
+  const SESS_META = {
+    morning:   { label:"เช้า 09:00–12:00",  icon:"☀", bg:"#eff6ff", color:"#1d4ed8" },
+    afternoon: { label:"บ่าย 13:00–16:00",  icon:"🌤", bg:"#faf5ff", color:"#6b21a8" },
+  };
 
+  // Helper: get slot from state
+  const getSlot = (dow, sess) =>
+    monthlyLineups[monthKey]?.[dow]?.[sess] || ["","",""];
+
+  // Draft state — keyed by "dow__sess"
+  const buildInitDraft = () => {
+    const d = {};
+    DAYS.forEach(({ dow, sessions }) => {
+      sessions.forEach(sess => {
+        d[`${dow}__${sess}`] = [...getSlot(dow, sess)];
+      });
+    });
+    return d;
+  };
+  const [draft, setDraft] = useState(buildInitDraft);
+
+  // Reset draft when month changes
   useEffect(() => {
-    const e = monthlyLineups[monthKey] || { morning: ["","",""], afternoon: ["","",""] };
-    setDraftMorning([...e.morning]);
-    setDraftAfternoon([...e.afternoon]);
-  }, [curOffset, monthKey]);
+    setDraft(buildInitDraft());
+  }, [curOffset, monthKey, monthlyLineups]);
 
-  const updateDraft = (sess, zoneIdx, advId) => {
-    if (sess === "morning") {
-      setDraftMorning(prev => { const n=[...prev]; n[zoneIdx]=advId; return n; });
-    } else {
-      setDraftAfternoon(prev => { const n=[...prev]; n[zoneIdx]=advId; return n; });
-    }
+  const updateDraft = (dow, sess, zoneIdx, advId) => {
+    const k = `${dow}__${sess}`;
+    setDraft(prev => {
+      const slot = [...(prev[k] || ["","",""])];
+      slot[zoneIdx] = advId;
+      return { ...prev, [k]: slot };
+    });
   };
 
-  const saveLineup = async (sess) => {
-    const ids = sess === "morning" ? draftMorning : draftAfternoon;
+  const saveSlot = async (dow, sess) => {
+    const k    = `${dow}__${sess}`;
+    const ids  = draft[k] || ["","",""];
     const prevLineups = { ...monthlyLineups };
-    const newLineup = {
-      morning:   sess === "morning"   ? [...ids] : [...(monthlyLineups[monthKey]?.morning   || ["","",""])],
-      afternoon: sess === "afternoon" ? [...ids] : [...(monthlyLineups[monthKey]?.afternoon || ["","",""])],
+    const prevMonth   = monthlyLineups[monthKey] || {};
+    const prevDow     = prevMonth[dow] || { morning:["","",""], afternoon:["","",""] };
+    const newDowData  = { ...prevDow, [sess]: [...ids] };
+    const newLineups  = {
+      ...monthlyLineups,
+      [monthKey]: { ...prevMonth, [dow]: newDowData },
     };
-    const newLineups = { ...monthlyLineups, [monthKey]: newLineup };
     setMonthlyLineups(newLineups);
     setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
-    notify(`บันทึก lineup ${sess === "morning" ? "ช่วงเช้า" : "ช่วงบ่าย"} — ${monthLabel} (กำลังบันทึกพื้นหลัง)`);
+    const dayLabel = DAYS.find(d=>d.dow===dow)?.label || "";
+    const sessLabel = sess === "morning" ? "เช้า" : "บ่าย";
+    notify(`บันทึก ${dayLabel} ${sessLabel} — ${monthLabel} (กำลังบันทึกพื้นหลัง)`);
     try {
-      await SheetsDB.saveMonthlyLineup(monthKey, newLineup.morning, newLineup.afternoon);
-      notify(`✓ บันทึก lineup ${monthLabel} ลงฐานข้อมูลเรียบร้อยแล้ว`);
+      const fullDow = newLineups[monthKey][dow];
+      await SheetsDB.saveMonthlyLineup(monthKey, dow, fullDow.morning || ["","",""], fullDow.afternoon || ["","",""]);
+      notify(`✓ บันทึก ${dayLabel} ${sessLabel} — ${monthLabel} เรียบร้อยแล้ว`);
     } catch (e) {
       setMonthlyLineups(prevLineups);
       notify(`⚠ บันทึกไม่สำเร็จ: ${e.message}`, true);
     }
   };
 
-  const clearLineup = async (sess) => {
-    const cleared = ["","",""];
-    if (sess === "morning") setDraftMorning(cleared);
-    else setDraftAfternoon(cleared);
+  const clearSlot = async (dow, sess) => {
+    const k = `${dow}__${sess}`;
+    setDraft(prev => ({ ...prev, [k]: ["","",""] }));
     const prevLineups = { ...monthlyLineups };
-    const newLineup = {
-      morning:   sess === "morning"   ? cleared : [...(monthlyLineups[monthKey]?.morning   || cleared)],
-      afternoon: sess === "afternoon" ? cleared : [...(monthlyLineups[monthKey]?.afternoon || cleared)],
+    const prevMonth   = monthlyLineups[monthKey] || {};
+    const prevDow     = prevMonth[dow] || { morning:["","",""], afternoon:["","",""] };
+    const newDowData  = { ...prevDow, [sess]: ["","",""] };
+    const newLineups  = {
+      ...monthlyLineups,
+      [monthKey]: { ...prevMonth, [dow]: newDowData },
     };
-    const newLineups = { ...monthlyLineups, [monthKey]: newLineup };
     setMonthlyLineups(newLineups);
     setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
-    notify(`ล้าง lineup ${sess === "morning" ? "ช่วงเช้า" : "ช่วงบ่าย"} — ${monthLabel}`);
     try {
-      await SheetsDB.saveMonthlyLineup(monthKey, newLineup.morning, newLineup.afternoon);
+      const fullDow = newLineups[monthKey][dow];
+      await SheetsDB.saveMonthlyLineup(monthKey, dow, fullDow.morning || ["","",""], fullDow.afternoon || ["","",""]);
     } catch (e) {
       setMonthlyLineups(prevLineups);
       notify(`⚠ บันทึกไม่สำเร็จ: ${e.message}`, true);
     }
   };
 
+  // Calendar preview helpers
   const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
   const firstDow    = new Date(curYear, curMonth, 1).getDay();
-  const isWeekendD  = (d) => { const dow = new Date(curYear, curMonth, d).getDay(); return dow===0||dow===6; };
-  const isWedD      = (d) => new Date(curYear, curMonth, d).getDay() === 3;
+  const getDowOfDay = (d) => new Date(curYear, curMonth, d).getDay();
 
-  const sessions = [
-    { key:"morning",   label:"ช่วงเช้า 09:00–12:00",   draft:draftMorning,   setDraft:setDraftMorning,   bg:"#eff6ff", color:"#1d4ed8" },
-    { key:"afternoon", label:"ช่วงบ่าย 13:00–16:00",   draft:draftAfternoon, setDraft:setDraftAfternoon, bg:"#faf5ff", color:"#6b21a8" },
-  ];
-
-  const DAY_SHORT = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+  const selDay = DAYS.find(d => d.dow === selectedDow);
 
   return (
     <div>
-      <div style={{ marginBottom:28 }}>
+      {/* Header */}
+      <div style={{ marginBottom:20 }}>
         <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>ตารางเวรอาจารย์ประจำเดือน</h2>
-        <p style={{ margin:0, color:C.muted, fontSize:14 }}>กำหนด Zone assignment รายเดือน ล่วงหน้าได้ 3 เดือน · Per-day override ยังคงมีความสำคัญสูงกว่าเสมอ</p>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>กำหนด Zone assignment รายวัน-ในสัปดาห์ ล่วงหน้าได้ 3 เดือน · Per-day override มีความสำคัญสูงกว่าเสมอ</p>
       </div>
 
-      <div style={{ ...cardStyle, marginBottom:20, padding:"12px 18px", background:C.soft }}>
-        <div style={{ display:"flex", gap:20, flexWrap:"wrap", alignItems:"center" }}>
-          <span style={{ fontSize:12.5, fontWeight:600, color:C.muted }}>ลำดับความสำคัญ (สูง → ต่ำ):</span>
-          {[
-            ["🔧 Per-day override", C.amberBg, C.amber],
-            ["📅 Monthly lineup (หน้านี้)", C.accentLight, C.accent],
-            ["⚙ Auto-assign จากตารางประจำ", C.soft, C.muted],
-          ].map(([l,bg,c])=>(
-            <span key={l} style={{ background:bg, color:c, borderRadius:99, padding:"3px 12px", fontSize:12, fontWeight:500 }}>{l}</span>
+      {/* Priority legend */}
+      <div style={{ ...cardStyle, marginBottom:20, padding:"10px 18px", background:C.soft }}>
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap", alignItems:"center" }}>
+          <span style={{ fontSize:12, fontWeight:600, color:C.muted }}>ลำดับความสำคัญ (สูง → ต่ำ):</span>
+          {[["🔧 Per-day override",C.amberBg,C.amber],["📅 Monthly lineup (หน้านี้)",C.accentLight,C.accent],["⚙ Auto-assign จากตาราง",C.soft,C.muted]].map(([l,bg,c])=>(
+            <span key={l} style={{ background:bg, color:c, borderRadius:99, padding:"2px 10px", fontSize:11.5, fontWeight:500 }}>{l}</span>
           ))}
         </div>
       </div>
 
-      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:22 }}>
-        <button
-          disabled={curOffset <= 0}
-          onClick={() => setCurOffset(o => o - 1)}
+      {/* Month navigation */}
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
+        <button disabled={curOffset<=0} onClick={()=>setCurOffset(o=>o-1)}
           style={{ ...btnStyle("ghost"), padding:"7px 12px", opacity:curOffset<=0?0.3:1 }}>←</button>
         <div>
-          <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, fontWeight:600 }}>{monthLabel}</span>
+          <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:600 }}>{monthLabel}</span>
           <span style={{ marginLeft:10, fontSize:13, color:C.muted }}>{offsetLabel}</span>
         </div>
-        <button
-          disabled={curOffset >= 3}
-          onClick={() => setCurOffset(o => o + 1)}
+        <button disabled={curOffset>=3} onClick={()=>setCurOffset(o=>o+1)}
           style={{ ...btnStyle("ghost"), padding:"7px 12px", opacity:curOffset>=3?0.3:1 }}>→</button>
       </div>
 
-      {sessions.map(sess => {
-        const isSet = sess.draft.some(x => x);
-        return (
-          <div key={sess.key} style={{ ...cardStyle, marginBottom:16, padding:0, overflow:"hidden" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ background:sess.bg, color:sess.color, borderRadius:99, padding:"3px 12px", fontSize:12.5, fontWeight:600 }}>
-                  {sess.key==="morning"?"☀":"🌤"} {sess.label}
-                </span>
-                {sess.key==="afternoon" && <span style={{ fontSize:12, color:C.muted }}>(วันพุธไม่มีช่วงบ่าย)</span>}
-              </div>
-              <span style={{ background:isSet?C.greenBg:C.soft, color:isSet?C.green:C.muted, borderRadius:99, padding:"3px 12px", fontSize:12, fontWeight:500 }}>
-                {isSet ? "✓ ตั้งค่าแล้ว" : "ยังไม่ตั้งค่า — ใช้ตารางประจำ"}
-              </span>
-            </div>
+      {/* Day-of-week tabs + detail panel side-by-side */}
+      <div style={{ display:"grid", gridTemplateColumns:"200px 1fr", gap:16, alignItems:"start" }}>
 
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", borderBottom:`1px solid ${C.line}` }}>
-              {[0,1,2].map(z => (
-                <div key={z} style={{ padding:"16px 20px", borderRight:z<2?`1px solid ${C.line}`:"none" }}>
-                  <label style={{ ...lblStyle, marginBottom:8 }}>
-                    Zone {["A","B","C"][z]}
-                    <span style={{ fontWeight:400, marginLeft:6, color:C.faint }}>ยูนิต {z*8+1}–{z*8+8}</span>
-                  </label>
-                  <select
-                    style={inpStyle}
-                    value={sess.draft[z]}
-                    onChange={e => updateDraft(sess.key, z, e.target.value)}>
-                    <option value="">— ใช้ตารางประจำ (fallback) —</option>
-                    {advisors.map(a => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                  {sess.draft[z] ? (
-                    <p style={{ margin:"6px 0 0", fontSize:12.5, fontWeight:500, color:C.accent }}>
-                      ✓ {advisors.find(a=>a.id===sess.draft[z])?.name}
-                    </p>
-                  ) : (
-                    <p style={{ margin:"6px 0 0", fontSize:12, color:C.faint, fontStyle:"italic" }}>fallback to auto-assign</p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px" }}>
-              <p style={{ margin:0, fontSize:12.5, color:C.muted }}>
-                ใช้กับทุกวันทำการใน{monthLabel} · Per-day override มีความสำคัญสูงกว่า
-              </p>
-              <div style={{ display:"flex", gap:8 }}>
-                <button style={{ ...btnStyle("ghost"), fontSize:12.5 }} onClick={() => clearLineup(sess.key)}>
-                  ล้าง
-                </button>
-                <button style={{ ...btnStyle("primary"), fontSize:12.5 }} onClick={() => saveLineup(sess.key)}>
-                  บันทึก {sess.key==="morning"?"ช่วงเช้า":"ช่วงบ่าย"}
-                </button>
-              </div>
-            </div>
+        {/* Left: DOW tab list */}
+        <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+            <span style={{ fontSize:12, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:0.5 }}>วันในสัปดาห์</span>
           </div>
-        );
-      })}
-
-      <div style={{ ...cardStyle, marginTop:24 }}>
-        <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:600 }}>ตัวอย่างปฏิทิน — {monthLabel}</h3>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:12 }}>
-          {DAY_SHORT.map(d => (
-            <div key={d} style={{ textAlign:"center", fontSize:11.5, fontWeight:600, color:C.muted, padding:"4px 0" }}>{d}</div>
-          ))}
-          {Array.from({length:firstDow}, (_,i) => (
-            <div key={`empty-${i}`} />
-          ))}
-          {Array.from({length:daysInMonth}, (_,i) => {
-            const d = i + 1;
-            const isWE = isWeekendD(d);
-            const isW  = isWedD(d);
-            const mSet = draftMorning.some(x=>x);
-            const aSet = draftAfternoon.some(x=>x);
+          {DAYS.map(({ dow, label, short, sessions:dowSessions }) => {
+            const isActive = selectedDow === dow;
+            // Count how many slots are set for this dow
+            const setCount = dowSessions.reduce((n, sess) => {
+              const k = `${dow}__${sess}`;
+              return n + (draft[k]?.some(x=>x) ? 1 : 0);
+            }, 0);
+            const totalSlots = dowSessions.length;
             return (
-              <div key={d} style={{ background:isWE?C.soft:"#fff", border:`1px solid ${C.line}`, borderRadius:8, padding:"5px 6px", minHeight:54, opacity:isWE?0.45:1 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:C.muted, textAlign:"right", marginBottom:3 }}>{d}</div>
-                {!isWE && (
-                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:3 }}>
-                      <span style={{ width:6, height:6, borderRadius:"50%", background:mSet?"#378ADD":C.faint, flexShrink:0, display:"block" }} />
-                      <span style={{ fontSize:9.5, color:mSet?"#1d4ed8":C.faint }}>M{isW?"*":""}</span>
+              <button key={dow} onClick={() => setSelectedDow(dow)}
+                style={{ display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%", padding:"13px 16px",
+                  border:"none", borderBottom:`1px solid ${C.line}`, cursor:"pointer", textAlign:"left",
+                  background: isActive ? C.accentLight : "#fff",
+                  borderLeft: isActive ? `3px solid ${C.accent}` : "3px solid transparent",
+                  transition:"all .12s" }}>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:isActive?600:400, color:isActive?C.accent:C.ink }}>{label}</div>
+                  {dow===3 && <div style={{ fontSize:11, color:C.faint }}>เช้าอย่างเดียว</div>}
+                </div>
+                <span style={{ fontSize:11, fontWeight:500,
+                  color: setCount===totalSlots ? C.green : setCount>0 ? C.amber : C.faint,
+                  background: setCount===totalSlots ? C.greenBg : setCount>0 ? C.amberBg : "transparent",
+                  borderRadius:99, padding: setCount>0 ? "2px 7px" : "0" }}>
+                  {setCount>0 ? `${setCount}/${totalSlots}` : "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: Session detail for selected DOW */}
+        <div>
+          {selDay && (
+            <div>
+              {/* DOW header */}
+              <div style={{ ...cardStyle, marginBottom:12, padding:"14px 20px", display:"flex", alignItems:"center", gap:12, background:C.accentLight }}>
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:600, color:C.accent }}>วัน{selDay.label}</span>
+                {selDay.dow===3 && (
+                  <span style={{ fontSize:12, color:C.amber, background:C.amberBg, borderRadius:99, padding:"2px 10px" }}>วันพุธ — เช้าเท่านั้น</span>
+                )}
+              </div>
+
+              {/* Session blocks */}
+              {selDay.sessions.map(sess => {
+                const k    = `${selDay.dow}__${sess}`;
+                const sm   = SESS_META[sess];
+                const isSet = draft[k]?.some(x=>x);
+                return (
+                  <div key={sess} style={{ ...cardStyle, marginBottom:12, padding:0, overflow:"hidden" }}>
+                    {/* Session header */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"11px 18px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+                      <span style={{ background:sm.bg, color:sm.color, borderRadius:99, padding:"3px 12px", fontSize:12.5, fontWeight:600 }}>
+                        {sm.icon} {sm.label}
+                      </span>
+                      <span style={{ background:isSet?C.greenBg:C.soft, color:isSet?C.green:C.faint, borderRadius:99, padding:"2px 10px", fontSize:12, fontWeight:500 }}>
+                        {isSet ? "✓ ตั้งค่าแล้ว" : "fallback → auto-assign"}
+                      </span>
                     </div>
-                    {!isW && (
-                      <div style={{ display:"flex", alignItems:"center", gap:3 }}>
-                        <span style={{ width:6, height:6, borderRadius:"50%", background:aSet?"#7c3aed":C.faint, flexShrink:0, display:"block" }} />
-                        <span style={{ fontSize:9.5, color:aSet?"#6b21a8":C.faint }}>A</span>
+
+                    {/* Zone selectors */}
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", borderBottom:`1px solid ${C.line}` }}>
+                      {[0,1,2].map(z => {
+                        const advId = draft[k]?.[z] || "";
+                        return (
+                          <div key={z} style={{ padding:"14px 18px", borderRight:z<2?`1px solid ${C.line}`:"none" }}>
+                            <label style={{ ...lblStyle, marginBottom:6 }}>
+                              Zone {["A","B","C"][z]}
+                              <span style={{ fontWeight:400, marginLeft:5, color:C.faint, fontSize:11 }}>ยูนิต {z*8+1}–{z*8+8}</span>
+                            </label>
+                            <select style={inpStyle} value={advId}
+                              onChange={e => updateDraft(selDay.dow, sess, z, e.target.value)}>
+                              <option value="">— fallback —</option>
+                              {advisors.map(a => (
+                                <option key={a.id} value={a.id}>{a.name}</option>
+                              ))}
+                            </select>
+                            {advId ? (
+                              <p style={{ margin:"5px 0 0", fontSize:12, fontWeight:500, color:C.accent }}>
+                                ✓ {advisors.find(a=>a.id===advId)?.name}
+                              </p>
+                            ) : (
+                              <p style={{ margin:"5px 0 0", fontSize:11.5, color:C.faint, fontStyle:"italic" }}>auto-assign</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 18px" }}>
+                      <p style={{ margin:0, fontSize:12, color:C.muted }}>
+                        ใช้กับทุกวัน{selDay.label}ใน{monthLabel}
+                      </p>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button style={{ ...btnStyle("ghost"), fontSize:12 }} onClick={() => clearSlot(selDay.dow, sess)}>ล้าง</button>
+                        <button style={{ ...btnStyle("primary"), fontSize:12 }} onClick={() => saveSlot(selDay.dow, sess)}>
+                          บันทึก{sess==="morning"?"เช้า":"บ่าย"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Calendar preview */}
+      <div style={{ ...cardStyle, marginTop:20 }}>
+        <h3 style={{ margin:"0 0 14px", fontSize:14, fontWeight:600 }}>ตัวอย่างปฏิทิน — {monthLabel}</h3>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3, marginBottom:10 }}>
+          {["อา","จ","อ","พ","พฤ","ศ","ส"].map(d=>(
+            <div key={d} style={{ textAlign:"center", fontSize:11, fontWeight:600, color:C.muted, padding:"3px 0" }}>{d}</div>
+          ))}
+          {Array.from({length:firstDow},(_,i)=><div key={`e-${i}`}/>)}
+          {Array.from({length:daysInMonth},(_,i)=>{
+            const d   = i+1;
+            const dow = getDowOfDay(d);
+            const isWE = dow===0||dow===6;
+            const isW  = dow===3;
+            const mSlot = draft[`${dow}__morning`];
+            const aSlot = draft[`${dow}__afternoon`];
+            const mSet  = !isWE && mSlot?.some(x=>x);
+            const aSet  = !isWE && !isW && aSlot?.some(x=>x);
+            const isSelDow = dow===selectedDow;
+            return (
+              <div key={d} style={{ background:isWE?C.soft:isSelDow?"#f0f4ff":"#fff",
+                border:`1px solid ${isSelDow&&!isWE?C.accent:C.line}`,
+                borderRadius:7, padding:"4px 5px", minHeight:48, opacity:isWE?0.4:1 }}>
+                <div style={{ fontSize:10.5, fontWeight:600, color:isSelDow&&!isWE?C.accent:C.muted, textAlign:"right", marginBottom:2 }}>{d}</div>
+                {!isWE&&(
+                  <div style={{ display:"flex", flexDirection:"column", gap:1.5 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                      <span style={{ width:5, height:5, borderRadius:"50%", background:mSet?"#378ADD":C.faint, display:"block", flexShrink:0 }}/>
+                      <span style={{ fontSize:9, color:mSet?"#1d4ed8":C.faint }}>M{isW?"*":""}</span>
+                    </div>
+                    {!isW&&(
+                      <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                        <span style={{ width:5, height:5, borderRadius:"50%", background:aSet?"#7c3aed":C.faint, display:"block", flexShrink:0 }}/>
+                        <span style={{ fontSize:9, color:aSet?"#6b21a8":C.faint }}>A</span>
                       </div>
                     )}
                   </div>
@@ -2386,11 +2473,12 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
             );
           })}
         </div>
-        <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:C.muted, paddingTop:8, borderTop:`1px solid ${C.line}` }}>
-          <span><span style={{ width:8, height:8, borderRadius:"50%", background:"#378ADD", display:"inline-block", marginRight:4 }} />Morning lineup ตั้งค่าแล้ว</span>
-          <span><span style={{ width:8, height:8, borderRadius:"50%", background:"#7c3aed", display:"inline-block", marginRight:4 }} />Afternoon lineup ตั้งค่าแล้ว</span>
-          <span><span style={{ width:8, height:8, borderRadius:"50%", background:C.faint, display:"inline-block", marginRight:4 }} />ใช้ตารางประจำ (fallback)</span>
-          <span style={{ marginLeft:"auto" }}>M = morning · A = afternoon · * = วันพุธ (เฉพาะเช้า)</span>
+        <div style={{ display:"flex", gap:14, flexWrap:"wrap", fontSize:11.5, color:C.muted, paddingTop:8, borderTop:`1px solid ${C.line}` }}>
+          <span><span style={{ width:7,height:7,borderRadius:"50%",background:"#378ADD",display:"inline-block",marginRight:3 }}/>เช้า ตั้งค่าแล้ว</span>
+          <span><span style={{ width:7,height:7,borderRadius:"50%",background:"#7c3aed",display:"inline-block",marginRight:3 }}/>บ่าย ตั้งค่าแล้ว</span>
+          <span><span style={{ width:7,height:7,borderRadius:"50%",background:C.faint,display:"inline-block",marginRight:3 }}/>fallback</span>
+          <span style={{ background:C.accentLight, color:C.accent, borderRadius:4, padding:"1px 7px" }}>วันที่ไฮไลท์ = วัน{selDay?.label}ที่เลือก</span>
+          <span style={{ marginLeft:"auto" }}>* = วันพุธ (เฉพาะเช้า)</span>
         </div>
       </div>
     </div>
