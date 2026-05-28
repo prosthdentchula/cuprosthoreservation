@@ -122,6 +122,17 @@ export function parseAdmins(rows) {
   }));
 }
 
+export function parseMonthlyLineups(rows) {
+  const result = {};
+  rows.slice(1).filter((r) => r[0]).forEach((r) => {
+    result[r[0]] = {
+      morning:   [r[1] || "", r[2] || "", r[3] || ""],
+      afternoon: [r[4] || "", r[5] || "", r[6] || ""],
+    };
+  });
+  return result;
+}
+
 // ── High-level SheetsDB API ───────────────────────────────────────────────────
 export const SheetsDB = {
 
@@ -129,12 +140,13 @@ export const SheetsDB = {
   async syncAll() {
     const j = await gasPost({ action: "syncAll" });
     return {
-      advisors:       parseAdvisors(j.data.advisors),
-      students:       parseStudents(j.data.students),
-      units:          parseUnits(j.data.units),
+      advisors:        parseAdvisors(j.data.advisors),
+      students:        parseStudents(j.data.students),
+      units:           parseUnits(j.data.units),
       sessionAdvisors: parseSessionAdvisors(j.data.sessionAdvisors),
-      reservations:   parseReservations(j.data.reservations),
-      admins:         parseAdmins(j.data.admins),
+      reservations:    parseReservations(j.data.reservations),
+      admins:          parseAdmins(j.data.admins),
+      monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
     };
   },
 
@@ -227,5 +239,24 @@ async writeReservation(res) {
     const rowIdx = rows.findIndex((r) => Number(r[0]) === unitId);
     if (rowIdx === -1) throw new Error(`Unit ${unitId} not found`);
     await apiPut(`Units!E${rowIdx + 1}`, [[newStatus]]);
+  },
+
+  async saveMonthlyLineup(monthKey, morningIds, afternoonIds) {
+    const rows = await apiGet("MonthlyLineups!A:A");
+    const rowIdx = rows.findIndex((r) => r[0] === monthKey);
+    const row = [
+      monthKey,
+      morningIds[0]   || "",
+      morningIds[1]   || "",
+      morningIds[2]   || "",
+      afternoonIds[0] || "",
+      afternoonIds[1] || "",
+      afternoonIds[2] || "",
+    ];
+    if (rowIdx > 0) {
+      await apiPut(`MonthlyLineups!A${rowIdx + 1}:G${rowIdx + 1}`, [row]);
+    } else {
+      await apiAppend("MonthlyLineups!A:G", [row]);
+    }
   },
 };
