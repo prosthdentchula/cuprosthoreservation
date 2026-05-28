@@ -157,12 +157,19 @@ function autoAssignAdvisors(dateStr, session, advisors) {
   ];
 }
 
-/* Build session advisor map for next 14 days from advisor schedules */
-function buildSessionAdvisors(advisors) {
+/* Build session advisor map for next 14 days from advisor schedules.
+   Monthly lineup takes priority over auto-assign; per-day overrides win over both. */
+function buildSessionAdvisors(advisors, monthlyLineups = {}) {
   const map = {};
   next14Days.forEach(d => {
     getAvailableSessions(d).forEach(s => {
-      map[`${d}__${s}`] = autoAssignAdvisors(d, s, advisors);
+      const monthKey = d.slice(0, 7); // "YYYY-MM"
+      const lineup = monthlyLineups[monthKey];
+      if (lineup && lineup[s] && lineup[s].some(id => id)) {
+        map[`${d}__${s}`] = [...lineup[s]];
+      } else {
+        map[`${d}__${s}`] = autoAssignAdvisors(d, s, advisors);
+      }
     });
   });
   return map;
@@ -1408,7 +1415,7 @@ function AdminOverview({ reservations, units, advisors, sessionAdvisors }) {
    Shows auto-assigned advisors per session (derived from their fixed schedule).
    Admin can override per-session (one-time) or edit an advisor's weekly schedule.
    ═══════════════════════════════════════════════════════════════════════════════ */
-function AdminSessionAdvisorsPage({ advisors, setAdvisors, sessionAdvisors, setSessionAdvisors, notify }) {
+function AdminSessionAdvisorsPage({ advisors, setAdvisors, sessionAdvisors, setSessionAdvisors, monthlyLineups, notify }) {
   const [selDate, setSelDate]       = useState(next14Days[0]);
   const [editingKey, setEditingKey] = useState(null);
   const [draftIds, setDraftIds]     = useState(["","",""]);
@@ -1458,7 +1465,7 @@ const saveSchedule = async () => {
     const prevSessionAdvisors = { ...sessionAdvisors };
     const newAdvisors = advisors.map(a => a.id === updated.id ? updated : a);
     setAdvisors(newAdvisors);
-    setSessionAdvisors(buildSessionAdvisors(newAdvisors)); // Rebuild the auto-assign map instantly
+    setSessionAdvisors(buildSessionAdvisors(newAdvisors, monthlyLineups)); // Rebuild the auto-assign map instantly
     setSchedAdv(null);
     notify(`อัปเดตตารางของ ${updated.name} (กำลังบันทึกพื้นหลัง)`);
     try {
@@ -2156,6 +2163,240 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
   );
 }
 
+/* ═══ ADMIN MONTHLY LINEUP ═══════════════════════════════════════════════════════
+   Admins set per-session zone assignments for up to 3 months ahead.
+   Priority: per-day override > monthly lineup > auto-assign from schedule.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, setSessAdvs, notify }) {
+  const baseYear  = today.getFullYear();
+  const baseMonth = today.getMonth();
+
+  const [curOffset, setCurOffset] = useState(0);
+
+  const curDate  = new Date(baseYear, baseMonth + curOffset, 1);
+  const curYear  = curDate.getFullYear();
+  const curMonth = curDate.getMonth();
+
+  const MONTH_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+                    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+  const monthKey = `${curYear}-${String(curMonth + 1).padStart(2, "0")}`;
+  const monthLabel = `${MONTH_TH[curMonth]} ${curYear + 543}`;
+
+  const offsetLabel = ["(เดือนนี้)","(เดือนหน้า)","(อีก 2 เดือน)","(อีก 3 เดือน — ไกลสุด)"][curOffset];
+
+  const existing = monthlyLineups[monthKey] || { morning: ["","",""], afternoon: ["","",""] };
+  const [draftMorning,   setDraftMorning]   = useState([...existing.morning]);
+  const [draftAfternoon, setDraftAfternoon] = useState([...existing.afternoon]);
+
+  useEffect(() => {
+    const e = monthlyLineups[monthKey] || { morning: ["","",""], afternoon: ["","",""] };
+    setDraftMorning([...e.morning]);
+    setDraftAfternoon([...e.afternoon]);
+  }, [curOffset, monthKey]);
+
+  const updateDraft = (sess, zoneIdx, advId) => {
+    if (sess === "morning") {
+      setDraftMorning(prev => { const n=[...prev]; n[zoneIdx]=advId; return n; });
+    } else {
+      setDraftAfternoon(prev => { const n=[...prev]; n[zoneIdx]=advId; return n; });
+    }
+  };
+
+  const saveLineup = async (sess) => {
+    const ids = sess === "morning" ? draftMorning : draftAfternoon;
+    const prevLineups = { ...monthlyLineups };
+    const newLineup = {
+      morning:   sess === "morning"   ? [...ids] : [...(monthlyLineups[monthKey]?.morning   || ["","",""])],
+      afternoon: sess === "afternoon" ? [...ids] : [...(monthlyLineups[monthKey]?.afternoon || ["","",""])],
+    };
+    const newLineups = { ...monthlyLineups, [monthKey]: newLineup };
+    setMonthlyLineups(newLineups);
+    setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
+    notify(`บันทึก lineup ${sess === "morning" ? "ช่วงเช้า" : "ช่วงบ่าย"} — ${monthLabel} (กำลังบันทึกพื้นหลัง)`);
+    try {
+      await SheetsDB.saveMonthlyLineup(monthKey, newLineup.morning, newLineup.afternoon);
+      notify(`✓ บันทึก lineup ${monthLabel} ลงฐานข้อมูลเรียบร้อยแล้ว`);
+    } catch (e) {
+      setMonthlyLineups(prevLineups);
+      notify(`⚠ บันทึกไม่สำเร็จ: ${e.message}`, true);
+    }
+  };
+
+  const clearLineup = async (sess) => {
+    const cleared = ["","",""];
+    if (sess === "morning") setDraftMorning(cleared);
+    else setDraftAfternoon(cleared);
+    const prevLineups = { ...monthlyLineups };
+    const newLineup = {
+      morning:   sess === "morning"   ? cleared : [...(monthlyLineups[monthKey]?.morning   || cleared)],
+      afternoon: sess === "afternoon" ? cleared : [...(monthlyLineups[monthKey]?.afternoon || cleared)],
+    };
+    const newLineups = { ...monthlyLineups, [monthKey]: newLineup };
+    setMonthlyLineups(newLineups);
+    setSessAdvs(prev => ({ ...buildSessionAdvisors(advisors, newLineups), ...prev }));
+    notify(`ล้าง lineup ${sess === "morning" ? "ช่วงเช้า" : "ช่วงบ่าย"} — ${monthLabel}`);
+    try {
+      await SheetsDB.saveMonthlyLineup(monthKey, newLineup.morning, newLineup.afternoon);
+    } catch (e) {
+      setMonthlyLineups(prevLineups);
+      notify(`⚠ บันทึกไม่สำเร็จ: ${e.message}`, true);
+    }
+  };
+
+  const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
+  const firstDow    = new Date(curYear, curMonth, 1).getDay();
+  const isWeekendD  = (d) => { const dow = new Date(curYear, curMonth, d).getDay(); return dow===0||dow===6; };
+  const isWedD      = (d) => new Date(curYear, curMonth, d).getDay() === 3;
+
+  const sessions = [
+    { key:"morning",   label:"ช่วงเช้า 09:00–12:00",   draft:draftMorning,   setDraft:setDraftMorning,   bg:"#eff6ff", color:"#1d4ed8" },
+    { key:"afternoon", label:"ช่วงบ่าย 13:00–16:00",   draft:draftAfternoon, setDraft:setDraftAfternoon, bg:"#faf5ff", color:"#6b21a8" },
+  ];
+
+  const DAY_SHORT = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+
+  return (
+    <div>
+      <div style={{ marginBottom:28 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>ตารางเวรอาจารย์ประจำเดือน</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>กำหนด Zone assignment รายเดือน ล่วงหน้าได้ 3 เดือน · Per-day override ยังคงมีความสำคัญสูงกว่าเสมอ</p>
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom:20, padding:"12px 18px", background:C.soft }}>
+        <div style={{ display:"flex", gap:20, flexWrap:"wrap", alignItems:"center" }}>
+          <span style={{ fontSize:12.5, fontWeight:600, color:C.muted }}>ลำดับความสำคัญ (สูง → ต่ำ):</span>
+          {[
+            ["🔧 Per-day override", C.amberBg, C.amber],
+            ["📅 Monthly lineup (หน้านี้)", C.accentLight, C.accent],
+            ["⚙ Auto-assign จากตารางประจำ", C.soft, C.muted],
+          ].map(([l,bg,c])=>(
+            <span key={l} style={{ background:bg, color:c, borderRadius:99, padding:"3px 12px", fontSize:12, fontWeight:500 }}>{l}</span>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:22 }}>
+        <button
+          disabled={curOffset <= 0}
+          onClick={() => setCurOffset(o => o - 1)}
+          style={{ ...btnStyle("ghost"), padding:"7px 12px", opacity:curOffset<=0?0.3:1 }}>←</button>
+        <div>
+          <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, fontWeight:600 }}>{monthLabel}</span>
+          <span style={{ marginLeft:10, fontSize:13, color:C.muted }}>{offsetLabel}</span>
+        </div>
+        <button
+          disabled={curOffset >= 3}
+          onClick={() => setCurOffset(o => o + 1)}
+          style={{ ...btnStyle("ghost"), padding:"7px 12px", opacity:curOffset>=3?0.3:1 }}>→</button>
+      </div>
+
+      {sessions.map(sess => {
+        const isSet = sess.draft.some(x => x);
+        return (
+          <div key={sess.key} style={{ ...cardStyle, marginBottom:16, padding:0, overflow:"hidden" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ background:sess.bg, color:sess.color, borderRadius:99, padding:"3px 12px", fontSize:12.5, fontWeight:600 }}>
+                  {sess.key==="morning"?"☀":"🌤"} {sess.label}
+                </span>
+                {sess.key==="afternoon" && <span style={{ fontSize:12, color:C.muted }}>(วันพุธไม่มีช่วงบ่าย)</span>}
+              </div>
+              <span style={{ background:isSet?C.greenBg:C.soft, color:isSet?C.green:C.muted, borderRadius:99, padding:"3px 12px", fontSize:12, fontWeight:500 }}>
+                {isSet ? "✓ ตั้งค่าแล้ว" : "ยังไม่ตั้งค่า — ใช้ตารางประจำ"}
+              </span>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", borderBottom:`1px solid ${C.line}` }}>
+              {[0,1,2].map(z => (
+                <div key={z} style={{ padding:"16px 20px", borderRight:z<2?`1px solid ${C.line}`:"none" }}>
+                  <label style={{ ...lblStyle, marginBottom:8 }}>
+                    Zone {["A","B","C"][z]}
+                    <span style={{ fontWeight:400, marginLeft:6, color:C.faint }}>ยูนิต {z*8+1}–{z*8+8}</span>
+                  </label>
+                  <select
+                    style={inpStyle}
+                    value={sess.draft[z]}
+                    onChange={e => updateDraft(sess.key, z, e.target.value)}>
+                    <option value="">— ใช้ตารางประจำ (fallback) —</option>
+                    {advisors.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                  {sess.draft[z] ? (
+                    <p style={{ margin:"6px 0 0", fontSize:12.5, fontWeight:500, color:C.accent }}>
+                      ✓ {advisors.find(a=>a.id===sess.draft[z])?.name}
+                    </p>
+                  ) : (
+                    <p style={{ margin:"6px 0 0", fontSize:12, color:C.faint, fontStyle:"italic" }}>fallback to auto-assign</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px" }}>
+              <p style={{ margin:0, fontSize:12.5, color:C.muted }}>
+                ใช้กับทุกวันทำการใน{monthLabel} · Per-day override มีความสำคัญสูงกว่า
+              </p>
+              <div style={{ display:"flex", gap:8 }}>
+                <button style={{ ...btnStyle("ghost"), fontSize:12.5 }} onClick={() => clearLineup(sess.key)}>
+                  ล้าง
+                </button>
+                <button style={{ ...btnStyle("primary"), fontSize:12.5 }} onClick={() => saveLineup(sess.key)}>
+                  บันทึก {sess.key==="morning"?"ช่วงเช้า":"ช่วงบ่าย"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{ ...cardStyle, marginTop:24 }}>
+        <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:600 }}>ตัวอย่างปฏิทิน — {monthLabel}</h3>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:12 }}>
+          {DAY_SHORT.map(d => (
+            <div key={d} style={{ textAlign:"center", fontSize:11.5, fontWeight:600, color:C.muted, padding:"4px 0" }}>{d}</div>
+          ))}
+          {Array.from({length:firstDow}, (_,i) => (
+            <div key={`empty-${i}`} />
+          ))}
+          {Array.from({length:daysInMonth}, (_,i) => {
+            const d = i + 1;
+            const isWE = isWeekendD(d);
+            const isW  = isWedD(d);
+            const mSet = draftMorning.some(x=>x);
+            const aSet = draftAfternoon.some(x=>x);
+            return (
+              <div key={d} style={{ background:isWE?C.soft:"#fff", border:`1px solid ${C.line}`, borderRadius:8, padding:"5px 6px", minHeight:54, opacity:isWE?0.45:1 }}>
+                <div style={{ fontSize:11, fontWeight:600, color:C.muted, textAlign:"right", marginBottom:3 }}>{d}</div>
+                {!isWE && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+                      <span style={{ width:6, height:6, borderRadius:"50%", background:mSet?"#378ADD":C.faint, flexShrink:0, display:"block" }} />
+                      <span style={{ fontSize:9.5, color:mSet?"#1d4ed8":C.faint }}>M{isW?"*":""}</span>
+                    </div>
+                    {!isW && (
+                      <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+                        <span style={{ width:6, height:6, borderRadius:"50%", background:aSet?"#7c3aed":C.faint, flexShrink:0, display:"block" }} />
+                        <span style={{ fontSize:9.5, color:aSet?"#6b21a8":C.faint }}>A</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:C.muted, paddingTop:8, borderTop:`1px solid ${C.line}` }}>
+          <span><span style={{ width:8, height:8, borderRadius:"50%", background:"#378ADD", display:"inline-block", marginRight:4 }} />Morning lineup ตั้งค่าแล้ว</span>
+          <span><span style={{ width:8, height:8, borderRadius:"50%", background:"#7c3aed", display:"inline-block", marginRight:4 }} />Afternoon lineup ตั้งค่าแล้ว</span>
+          <span><span style={{ width:8, height:8, borderRadius:"50%", background:C.faint, display:"inline-block", marginRight:4 }} />ใช้ตารางประจำ (fallback)</span>
+          <span style={{ marginLeft:"auto" }}>M = morning · A = afternoon · * = วันพุธ (เฉพาะเช้า)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══ SIDEBAR ════════════════════════════════════════════════════════════════════ */
 function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword }) {
   const [showPwModal, setShowPwModal] = useState(false);
@@ -2163,7 +2404,7 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
     ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
     : user.role==="advisor"
     ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"my-res",i:"📋",l:"การจอง"}]
-    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"}];
+    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"}];
   return (
     <aside style={{ width:235, background:C.ink, minHeight:"100vh", display:"flex", flexDirection:"column", flexShrink:0 }}>
       <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
@@ -2222,7 +2463,8 @@ export default function App() {
   const [admins, setAdmins]               = useState(SEED_ADMINS);
   const [units, setUnits]                 = useState(INIT_UNITS);
   const [reservations, setReservations]   = useState([]);
-  const [sessionAdvisors, setSessAdvs]    = useState(()=>buildSessionAdvisors(SEED_ADVISORS));
+  const [sessionAdvisors, setSessAdvs]    = useState(()=>buildSessionAdvisors(SEED_ADVISORS, {}));
+  const [monthlyLineups, setMonthlyLineups] = useState({});
   const [toast, setToast]                 = useState(null);
 
   const notify = (text, warn=false) => setToast({text,warn});
@@ -2236,12 +2478,13 @@ export default function App() {
   setLoadError(null);
   try {
     const data = await SheetsDB.syncAll();
-    const autoMap = buildSessionAdvisors(data.advisors);
+    const autoMap = buildSessionAdvisors(data.advisors, data.monthlyLineups || {});
     const freshSessAdvs = { ...autoMap, ...data.sessionAdvisors };
     
     setAdvisors(data.advisors);
     setStudents(data.students);
     setAdmins(data.admins);
+    setMonthlyLineups(data.monthlyLineups || {});
     setSessAdvs(freshSessAdvs);
 
     // FIX: Merge sheet units with default overflow units
@@ -2393,7 +2636,17 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
         {page==="overview"          && <BrowsePage reservations={reservations} user={{...user, role:"overview"}} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} onBook={book} />}
         {page==="my-res"            && <MyReservationsPage reservations={reservations} user={user} units={units} sessionAdvisors={sessionAdvisors} advisors={advisors} onCancel={cancel} onEdit={editReservation} />}
         {page==="admin-overview"    && <AdminOverview reservations={reservations} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} />}
-        {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} notify={notify} />}
+        {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} monthlyLineups={monthlyLineups} notify={notify} />}
+        {page==="admin-monthly-lineup"   &&
+          <AdminMonthlyLineupPage
+            advisors={advisors}
+            monthlyLineups={monthlyLineups}
+            setMonthlyLineups={setMonthlyLineups}
+            sessionAdvisors={sessionAdvisors}
+            setSessAdvs={setSessAdvs}
+            notify={notify}
+          />
+        }
         {page==="admin-users"       && <AdminManageUsersPage students={students} setStudents={setStudents} advisors={advisors} setAdvisors={setAdvisors} notify={notify} />}
         {page==="admin-units"       && <AdminUnitsPage units={units} setUnits={setUnits} advisors={advisors} sessionAdvisors={sessionAdvisors} reservations={reservations} notify={notify} />}
         {page==="admin-res"         && <AdminReservationsPage reservations={reservations} units={units} onUpdateStatus={updateStatus} />}
