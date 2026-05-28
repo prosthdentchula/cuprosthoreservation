@@ -123,11 +123,16 @@ export function parseAdmins(rows) {
 }
 
 export function parseMonthlyLineups(rows) {
+  // Shape: { "YYYY-MM": { dow: { morning:[...], afternoon:[...] } } }
+  // Sheet columns: monthKey | dow | morningA | morningB | morningC | afternoonA | afternoonB | afternoonC
   const result = {};
-  rows.slice(1).filter((r) => r[0]).forEach((r) => {
-    result[r[0]] = {
-      morning:   [r[1] || "", r[2] || "", r[3] || ""],
-      afternoon: [r[4] || "", r[5] || "", r[6] || ""],
+  rows.slice(1).filter((r) => r[0] && r[1]).forEach((r) => {
+    const monthKey = r[0];
+    const dow      = Number(r[1]); // 1=Mon…5=Fri
+    if (!result[monthKey]) result[monthKey] = {};
+    result[monthKey][dow] = {
+      morning:   [r[2] || "", r[3] || "", r[4] || ""],
+      afternoon: [r[5] || "", r[6] || "", r[7] || ""],
     };
   });
   return result;
@@ -241,11 +246,13 @@ async writeReservation(res) {
     await apiPut(`Units!E${rowIdx + 1}`, [[newStatus]]);
   },
 
-  async saveMonthlyLineup(monthKey, morningIds, afternoonIds) {
-    const rows = await apiGet("MonthlyLineups!A:A");
-    const rowIdx = rows.findIndex((r) => r[0] === monthKey);
+  async saveMonthlyLineup(monthKey, dow, morningIds, afternoonIds) {
+    // Sheet columns: monthKey | dow | morningA | morningB | morningC | afternoonA | afternoonB | afternoonC
+    const rows = await apiGet("MonthlyLineups!A:B");
+    const rowIdx = rows.findIndex((r) => r[0] === monthKey && Number(r[1]) === dow);
     const row = [
       monthKey,
+      String(dow),
       morningIds[0]   || "",
       morningIds[1]   || "",
       morningIds[2]   || "",
@@ -254,9 +261,9 @@ async writeReservation(res) {
       afternoonIds[2] || "",
     ];
     if (rowIdx > 0) {
-      await apiPut(`MonthlyLineups!A${rowIdx + 1}:G${rowIdx + 1}`, [row]);
+      await apiPut(`MonthlyLineups!A${rowIdx + 1}:H${rowIdx + 1}`, [row]);
     } else {
-      await apiAppend("MonthlyLineups!A:G", [row]);
+      await apiAppend("MonthlyLineups!A:H", [row]);
     }
   },
 };
