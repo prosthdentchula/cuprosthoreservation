@@ -2566,8 +2566,16 @@ export default function App() {
   setLoadError(null);
   try {
     const data = await SheetsDB.syncAll();
+    // Priority: per-day override > monthly lineup > auto-assign
+    // autoMap already encodes monthly lineup as the base (via buildSessionAdvisors).
+    // data.sessionAdvisors contains ONLY explicit per-day overrides from Session_Advisors sheet,
+    // so we spread it on top — but only for keys that are genuine overrides (non-empty advisor slot).
     const autoMap = buildSessionAdvisors(data.advisors, data.monthlyLineups || {});
-    const freshSessAdvs = { ...autoMap, ...data.sessionAdvisors };
+    const freshSessAdvs = { ...autoMap };
+    // Apply per-day overrides only where at least one advisor ID is explicitly set
+    Object.entries(data.sessionAdvisors || {}).forEach(([key, ids]) => {
+      if (ids.some(id => id)) freshSessAdvs[key] = ids;
+    });
     
     setAdvisors(data.advisors);
     setStudents(data.students);
