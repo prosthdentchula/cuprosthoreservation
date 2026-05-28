@@ -260,7 +260,7 @@ async writeReservation(res) {
       afternoonIds[1] || "",
       afternoonIds[2] || "",
     ];
-    if (rowIdx > 0) {
+    if (rowIdx !== -1) {
       await apiPut(`MonthlyLineups!A${rowIdx + 1}:H${rowIdx + 1}`, [row]);
     } else {
       await apiAppend("MonthlyLineups!A:H", [row]);
