@@ -327,7 +327,7 @@ function ChangePasswordModal({ user, onSave, onClose }) {
 }
 
 /* ═══ LOGIN ══════════════════════════════════════════════════════════════════════ */
-function LoginPage({ onLogin, students, advisors, admins }) {
+function LoginPage({ onLogin, students, advisors, admins, loading }) {
   const [role, setRole]     = useState("student");
   const [username, setUser] = useState("");
   const [pass, setPass]     = useState("");
@@ -337,14 +337,16 @@ const go = async () => {
     setErr("");
     let validUser = null;
 
+    const isActive = (x) => x.active !== false && x.active !== "FALSE" && x.active !== "false";
+
     if (role==="student") {
-      const s = students.find(x=>x.username===username&&x.password===pass&&x.active!==false);
+      const s = students.find(x=>x.username===username&&x.password===pass&&isActive(x));
       if (s) validUser = {...s, role:"student"};
     } else if (role==="admin") {
       const a = admins.find(x=>x.username===username&&x.password===pass);
       if (a) validUser = {...a, role:"admin"};
     } else {
-      const adv = advisors.find(x=>x.username===username&&x.password===pass&&x.active!==false);
+      const adv = advisors.find(x=>x.username===username&&x.password===pass&&isActive(x));
       if (adv) validUser = {...adv, role:"advisor"};
     }
 
@@ -382,10 +384,12 @@ const go = async () => {
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={lblStyle}>รหัสผ่าน</label>
-            <input style={inpStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="••••••••" />
+            <input style={inpStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!loading&&go()} placeholder="••••••••" />
           </div>
           {err && <p style={{ margin:"0 0 14px", color:C.red, fontSize:13 }}>{err}</p>}
-          <button onClick={go} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14 }}>เข้าสู่ระบบ</button>
+          <button onClick={go} disabled={loading} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14, opacity:loading?0.6:1, cursor:loading?"not-allowed":"pointer" }}>
+            {loading ? "กำลังโหลดข้อมูล…" : "เข้าสู่ระบบ"}
+          </button>
         </div>
       </div>
     </div>
@@ -2716,7 +2720,7 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     notify("✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
   };
 
-  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} />;
+  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} loading={loading} />;
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", color:C.ink }}>
