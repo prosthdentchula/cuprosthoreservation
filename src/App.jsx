@@ -327,30 +327,46 @@ function ChangePasswordModal({ user, onSave, onClose }) {
 }
 
 /* ═══ LOGIN ══════════════════════════════════════════════════════════════════════ */
-function LoginPage({ onLogin, students, advisors, admins }) {
-  const [role, setRole]     = useState("student");
-  const [username, setUser] = useState("");
-  const [pass, setPass]     = useState("");
-  const [err, setErr]       = useState("");
+function LoginPage({ onLogin, students, advisors, admins, sheetsReady, onSyncReady }) {
+  const [role, setRole]       = useState("student");
+  const [username, setUser]   = useState("");
+  const [pass, setPass]       = useState("");
+  const [err, setErr]         = useState("");
+  const [waiting, setWaiting] = useState(false); // true while polling for sync to finish
 
-const go = async () => {
+  /* go() — validate credentials.
+     If Sheets hasn't finished loading yet (sheetsReady=false), poll every 250 ms
+     until it is done — then validate against the live data instead of seed data.
+     This eliminates false "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" errors during initial sync. */
+  const go = async () => {
     setErr("");
+
+    if (!sheetsReady) {
+      setWaiting(true);
+      await new Promise(resolve => {
+        const poll = setInterval(() => {
+          if (onSyncReady()) { clearInterval(poll); resolve(); }
+        }, 250);
+      });
+      setWaiting(false);
+    }
+
     let validUser = null;
 
-    if (role==="student") {
-      const s = students.find(x=>x.username===username&&x.password===pass&&x.active!==false);
-      if (s) validUser = {...s, role:"student"};
-    } else if (role==="admin") {
-      const a = admins.find(x=>x.username===username&&x.password===pass);
-      if (a) validUser = {...a, role:"admin"};
+    if (role === "student") {
+      const s = students.find(x => x.username === username && x.password === pass && x.active !== false);
+      if (s) validUser = { ...s, role: "student" };
+    } else if (role === "admin") {
+      const a = admins.find(x => x.username === username && x.password === pass);
+      if (a) validUser = { ...a, role: "admin" };
     } else {
-      const adv = advisors.find(x=>x.username===username&&x.password===pass&&x.active!==false);
-      if (adv) validUser = {...adv, role:"advisor"};
+      const adv = advisors.find(x => x.username === username && x.password === pass && x.active !== false);
+      if (adv) validUser = { ...adv, role: "advisor" };
     }
 
     if (validUser) {
       try {
-        await initGoogleAuth(); 
+        await initGoogleAuth();
         onLogin(validUser);
       } catch (e) {
         setErr("ไม่สามารถเชื่อมต่อ Google ได้ กรุณาอนุญาต Pop-up (Please allow pop-ups)");
@@ -359,6 +375,8 @@ const go = async () => {
       setErr("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
     }
   };
+
+  const isBusy = !sheetsReady || waiting;
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -378,14 +396,23 @@ const go = async () => {
           </div>
           <div style={{ marginBottom:14 }}>
             <label style={lblStyle}>ชื่อผู้ใช้</label>
-            <input style={inpStyle} value={username} onChange={e=>setUser(e.target.value)} placeholder={role==="student"?"รหัสประจำตัวนิสิต 10 หลัก":role==="admin"?"admin":"เช่น siriporn"} />
+            <input style={{ ...inpStyle, opacity: isBusy ? 0.5 : 1 }} disabled={isBusy} value={username} onChange={e=>setUser(e.target.value)} placeholder={role==="student"?"รหัสประจำตัวนิสิต 10 หลัก":role==="admin"?"admin":"เช่น siriporn"} />
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={lblStyle}>รหัสผ่าน</label>
-            <input style={inpStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="••••••••" />
+            <input style={{ ...inpStyle, opacity: isBusy ? 0.5 : 1 }} disabled={isBusy} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!isBusy&&go()} placeholder="••••••••" />
           </div>
+          {isBusy && (
+            <div style={{ display:"flex", alignItems:"center", gap:8, background:C.accentLight, border:"1px solid #bfdbfe", borderRadius:8, padding:"9px 13px", marginBottom:14, fontSize:13, color:C.accent }}>
+              <div style={{ width:13, height:13, borderRadius:"50%", border:`2px solid ${C.accent}`, borderTopColor:"transparent", animation:"spin 0.7s linear infinite", flexShrink:0 }} />
+              <span>{waiting ? "กำลังตรวจสอบข้อมูล กรุณารอสักครู่…" : "กำลังโหลดข้อมูลจากเซิร์ฟเวอร์…"}</span>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
           {err && <p style={{ margin:"0 0 14px", color:C.red, fontSize:13 }}>{err}</p>}
-          <button onClick={go} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14 }}>เข้าสู่ระบบ</button>
+          <button onClick={go} disabled={isBusy} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14, opacity: isBusy ? 0.6 : 1, cursor: isBusy ? "not-allowed" : "pointer" }}>
+            {waiting ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
+          </button>
         </div>
       </div>
     </div>
@@ -2545,6 +2572,7 @@ export default function App() {
   const [user, setUser]                   = useState(()=>loadSession());
   const [page, setPage]                   = useState(()=>{ const u=loadSession(); return u?(u.role==="admin"?"admin-overview":"browse"):"browse"; });
   const [loading, setLoading]             = useState(false);
+  const [sheetsReady, setSheetsReady]     = useState(false); // true once first syncAll completes
   const [loadError, setLoadError]         = useState(null);
   const [advisors, setAdvisors]           = useState(SEED_ADVISORS);
   const [students, setStudents]           = useState(SEED_STUDENTS);
@@ -2577,6 +2605,7 @@ export default function App() {
       if (ids.some(id => id)) freshSessAdvs[key] = ids;
     });
     
+    setSheetsReady(true);
     setAdvisors(data.advisors);
     setStudents(data.students);
     setAdmins(data.admins);
@@ -2719,7 +2748,7 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     notify("✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
   };
 
-  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} />;
+  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} sheetsReady={sheetsReady} onSyncReady={()=>sheetsReady} />;
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", color:C.ink }}>
