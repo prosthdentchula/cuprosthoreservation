@@ -327,7 +327,7 @@ function ChangePasswordModal({ user, onSave, onClose }) {
 }
 
 /* ═══ LOGIN ══════════════════════════════════════════════════════════════════════ */
-function LoginPage({ onLogin, students, advisors, admins, loading }) {
+function LoginPage({ onLogin, students, advisors, admins }) {
   const [role, setRole]     = useState("student");
   const [username, setUser] = useState("");
   const [pass, setPass]     = useState("");
@@ -337,16 +337,14 @@ const go = async () => {
     setErr("");
     let validUser = null;
 
-    const isActive = (x) => x.active !== false && x.active !== "FALSE" && x.active !== "false";
-
     if (role==="student") {
-      const s = students.find(x=>x.username===username&&x.password===pass&&isActive(x));
+      const s = students.find(x=>x.username===username&&x.password===pass&&x.active!==false);
       if (s) validUser = {...s, role:"student"};
     } else if (role==="admin") {
       const a = admins.find(x=>x.username===username&&x.password===pass);
       if (a) validUser = {...a, role:"admin"};
     } else {
-      const adv = advisors.find(x=>x.username===username&&x.password===pass&&isActive(x));
+      const adv = advisors.find(x=>x.username===username&&x.password===pass&&x.active!==false);
       if (adv) validUser = {...adv, role:"advisor"};
     }
 
@@ -384,12 +382,10 @@ const go = async () => {
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={lblStyle}>รหัสผ่าน</label>
-            <input style={inpStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!loading&&go()} placeholder="••••••••" />
+            <input style={inpStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="••••••••" />
           </div>
           {err && <p style={{ margin:"0 0 14px", color:C.red, fontSize:13 }}>{err}</p>}
-          <button onClick={go} disabled={loading} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14, opacity:loading?0.6:1, cursor:loading?"not-allowed":"pointer" }}>
-            {loading ? "กำลังโหลดข้อมูล…" : "เข้าสู่ระบบ"}
-          </button>
+          <button onClick={go} style={{ ...btnStyle("primary"), width:"100%", padding:"11px 0", fontSize:14 }}>เข้าสู่ระบบ</button>
         </div>
       </div>
     </div>
@@ -2647,7 +2643,10 @@ export default function App() {
     saveSession(u);
     setUser(u);
     setPage(u.role==="admin"?"admin-overview":"browse");
-    loadFromSheets();
+    // NOTE: loadFromSheets() is NOT called here.
+    // The mount useEffect already runs it once on app start (before login),
+    // so calling it again here would fire two simultaneous GAS requests,
+    // causing the second one to wait 30s on LockService — the main cause of slow load.
   };
 
 const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost, inheritUnit }) => {
@@ -2720,7 +2719,7 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     notify("✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
   };
 
-  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} loading={loading} />;
+  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} />;
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", color:C.ink }}>
