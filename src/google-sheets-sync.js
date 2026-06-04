@@ -16,19 +16,42 @@ export async function initGoogleAuth() {
 
 // ── Low-level GAS Fetch Helpers ───────────────────────────────────────────────
 async function gasPost(payload) {
-  // 1. Add a timestamp to the URL to make every request look completely unique
+  const controller = new AbortController();
+  // Abort after 20 seconds — covers GAS cold-start time without hanging forever
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
   const urlWithCacheBuster = `${WEB_APP_URL}?t=${Date.now()}`;
-  
-  const r = await fetch(urlWithCacheBuster, {
-    method: "POST",
-    body: JSON.stringify(payload),
-    // 2. THIS IS THE MAGIC LINE: Force the browser to skip the redirect cache
-    cache: "no-store", 
-  });
-  
-  const j = await r.json();
-  if (!j.success) throw new Error(j.error);
-  return j;
+
+  try {
+    const r = await fetch(urlWithCacheBuster, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    const text = await r.text();
+
+    // GAS sometimes returns an HTML redirect page instead of JSON on cold starts.
+    // Detecting this early gives a meaningful error instead of "Invalid JSON".
+    if (!text.trimStart().startsWith("{") && !text.trimStart().startsWith("[")) {
+      throw new Error(
+        "GAS ส่งค่าที่ไม่ใช่ JSON กลับมา (น่าจะเป็น redirect) — ลองใหม่ หรือ redeploy script เป็น version ใหม่"
+      );
+    }
+
+    const j = JSON.parse(text);
+    if (!j.success) throw new Error(j.error);
+    return j;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("การเชื่อมต่อหมดเวลา (20 วินาที) — กรุณาลองใหม่อีกครั้ง");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function apiGet(range) {
