@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SheetsDB, initGoogleAuth } from "./google-sheets-sync.js";
 
 const fontLink = document.createElement("link");
@@ -2582,6 +2582,8 @@ export default function App() {
   const [sessionAdvisors, setSessAdvs]    = useState(()=>buildSessionAdvisors(SEED_ADVISORS, {}));
   const [monthlyLineups, setMonthlyLineups] = useState({});
   const [toast, setToast]                 = useState(null);
+  // Prevents duplicate concurrent syncAll calls (which cause GAS LockService to block for 30s)
+  const syncInFlight = useRef(false);
 
   const notify = (text, warn=false) => setToast({text,warn});
 
@@ -2589,7 +2591,10 @@ export default function App() {
      All derived state (sessionAdvisors) is computed BEFORE any setState call,
      then every setter fires in the same synchronous block so React batches
      them into a single re-render — eliminating the stale-advisor flash. */
- const loadFromSheets = async () => {
+  const loadFromSheets = async () => {
+    // Drop duplicate calls — prevents second request from hitting GAS LockService (30s block)
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
   setLoading(true);
   setLoadError(null);
   try {
@@ -2638,17 +2643,22 @@ export default function App() {
         r => r.date >= eighteenMonthsAgoStr
       );
       setReservations(activeReservations);
-      // Fire-and-forget: mark each old reservation cancelled in Sheets
-      toArchive.forEach(r => {
-        SheetsDB.updateReservationStatus(r.id, "cancelled").catch(err =>
-          console.warn(`Archive ${r.id} failed:`, err)
-        );
+      // Fire-and-forget: mark each old reservation cancelled in Sheets.
+      // Staggered by 500ms each to avoid simultaneous GAS requests competing
+      // for LockService (which would cause each subsequent one to block for 30s).
+      toArchive.forEach((r, i) => {
+        setTimeout(() => {
+          SheetsDB.updateReservationStatus(r.id, "cancelled").catch(err =>
+            console.warn(`Archive ${r.id} failed:`, err)
+          );
+        }, i * 500);
       });
     } catch (error) {
       console.error("Sheets sync error:", error);
       setLoadError(error.message);
     } finally {
       setLoading(false);
+      syncInFlight.current = false; // Always release so future calls can proceed
     }
   };
 
