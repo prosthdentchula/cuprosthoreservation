@@ -2103,6 +2103,315 @@ const saveEdit = async () => {
 }
 
 /* ═══ ADMIN RESERVATIONS ═════════════════════════════════════════════════════════ */
+/* ═══ ADMIN STUDENT SUMMARY (Reservation Report) ════════════════════════════════
+   Shows per-student reservation counts (total, ghost, normal) for a date range.
+   Supports quick presets (this year, last year, this month, last month, custom).
+   Includes a print-friendly full-page report.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function printStudentSummaryReport({ rows, fromDate, toDate, periodLabel }) {
+  const now = new Date().toLocaleString("th-TH", { dateStyle:"short", timeStyle:"short" });
+  const tableRows = rows.map((r, i) => `
+    <tr class="${i % 2 === 0 ? "even" : "odd"}">
+      <td class="center">${i + 1}</td>
+      <td>${r.name}</td>
+      <td class="center">${r.id}</td>
+      <td class="center">${r.program || "—"}</td>
+      <td class="num">${r.total}</td>
+      <td class="num ghost">${r.ghost}</td>
+      <td class="num">${r.normal}</td>
+    </tr>`).join("");
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+  <title>รายงานสรุปการจอง — ${periodLabel}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Sarabun','Tahoma',sans-serif;font-size:13px;color:#16191f;padding:16mm 14mm;background:#fff}
+    h1{font-size:22px;font-weight:700;margin-bottom:4px;letter-spacing:-.3px}
+    .sub{color:#6b7280;font-size:12px;margin-bottom:18px}
+    .period{display:inline-block;background:#e8eef7;color:#1e3a5f;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:600;margin-bottom:18px}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    thead tr{background:#16191f;color:#fff}
+    th{padding:9px 11px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+    th.center,td.center{text-align:center}
+    th.num,td.num{text-align:right;padding-right:18px}
+    td{padding:8px 11px;border-bottom:1px solid #e5e7eb}
+    tr.even td{background:#f9fafb}
+    td.ghost{color:#7c3aed;font-weight:600}
+    .footer{margin-top:14px;font-size:11px;color:#9ca3af;display:flex;justify-content:space-between}
+    .total-row td{font-weight:700;background:#f4f5f7!important;border-top:2px solid #e5e7eb}
+    @media print{body{padding:10mm 10mm}}
+  </style></head><body>
+  <h1>🦷 CUProstho — รายงานสรุปการจองรายนิสิต</h1>
+  <div class="sub">คณะทันตแพทยศาสตร์ จุฬาลงกรณ์มหาวิทยาลัย</div>
+  <div class="period">📅 ${periodLabel} (${fromDate} ถึง ${toDate})</div>
+  <table>
+    <thead><tr>
+      <th class="center" style="width:44px">#</th>
+      <th>ชื่อนิสิต</th>
+      <th class="center">รหัส</th>
+      <th class="center">หลักสูตร</th>
+      <th class="num">จองทั้งหมด</th>
+      <th class="num">ผี 👻</th>
+      <th class="num">ปกติ</th>
+    </tr></thead>
+    <tbody>
+      ${tableRows}
+      <tr class="total-row">
+        <td colspan="4" style="padding-left:11px">รวมทั้งหมด</td>
+        <td class="num">${rows.reduce((s,r)=>s+r.total,0)}</td>
+        <td class="num ghost">${rows.reduce((s,r)=>s+r.ghost,0)}</td>
+        <td class="num">${rows.reduce((s,r)=>s+r.normal,0)}</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="footer">
+    <span>จำนวนนิสิต: ${rows.length} คน</span>
+    <span>พิมพ์เมื่อ: ${now}</span>
+  </div>
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+function AdminStudentSummaryPage({ reservations, students }) {
+  const currentYear  = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-indexed
+
+  // Preset helpers
+  const presets = [
+    { k:"this-year",  l:`ปีนี้ (${currentYear})` },
+    { k:"last-year",  l:`ปีที่แล้ว (${currentYear - 1})` },
+    { k:"this-month", l:"เดือนนี้" },
+    { k:"last-month", l:"เดือนที่แล้ว" },
+    { k:"custom",     l:"กำหนดเอง" },
+  ];
+
+  function rangeForPreset(k) {
+    const pad = (n) => String(n).padStart(2,"0");
+    if (k === "this-year")  return { from:`${currentYear}-01-01`, to:`${currentYear}-12-31` };
+    if (k === "last-year")  return { from:`${currentYear-1}-01-01`, to:`${currentYear-1}-12-31` };
+    if (k === "this-month") {
+      const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+      return { from:`${currentYear}-${pad(currentMonth+1)}-01`, to:`${currentYear}-${pad(currentMonth+1)}-${lastDay}` };
+    }
+    if (k === "last-month") {
+      const lm = new Date(currentYear, currentMonth, 0);
+      const y  = lm.getFullYear(), m = lm.getMonth() + 1;
+      const lastDay = new Date(y, m, 0).getDate();
+      return { from:`${y}-${pad(m)}-01`, to:`${y}-${pad(m)}-${lastDay}` };
+    }
+    return null; // custom
+  }
+
+  const [preset, setPreset]     = useState("this-year");
+  const [fromDate, setFrom]     = useState(rangeForPreset("this-year").from);
+  const [toDate,   setTo]       = useState(rangeForPreset("this-year").to);
+  const [sortCol,  setSortCol]  = useState("total");
+  const [sortAsc,  setSortAsc]  = useState(false);
+  const [search,   setSearch]   = useState("");
+
+  function applyPreset(k) {
+    setPreset(k);
+    const r = rangeForPreset(k);
+    if (r) { setFrom(r.from); setTo(r.to); }
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortAsc(a => !a);
+    else { setSortCol(col); setSortAsc(false); }
+  }
+
+  // Build per-student summary
+  const inRange = reservations.filter(r => r.date >= fromDate && r.date <= toDate && r.status !== "cancelled");
+
+  const byStudent = {};
+  inRange.forEach(r => {
+    if (!r.studentId) return;
+    if (!byStudent[r.studentId]) {
+      const stu = students.find(s => s.id === r.studentId);
+      byStudent[r.studentId] = {
+        id:      r.studentId,
+        name:    r.studentName || stu?.name || r.studentId,
+        program: stu?.program || "—",
+        total:   0,
+        ghost:   0,
+        normal:  0,
+      };
+    }
+    byStudent[r.studentId].total++;
+    if (r.isGhost) byStudent[r.studentId].ghost++;
+    else           byStudent[r.studentId].normal++;
+  });
+
+  let rows = Object.values(byStudent);
+
+  // Include students with 0 reservations? Only show active students who had bookings is fine — but we show all with ≥1 booking
+  // (students with 0 will naturally not appear)
+
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(r => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  }
+
+  rows.sort((a, b) => {
+    const va = a[sortCol], vb = b[sortCol];
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const totalRes   = rows.reduce((s, r) => s + r.total,  0);
+  const totalGhost = rows.reduce((s, r) => s + r.ghost,  0);
+  const totalNorm  = rows.reduce((s, r) => s + r.normal, 0);
+
+  const presetLabel = presets.find(p => p.k === preset)?.l || "กำหนดเอง";
+
+  const SortIcon = ({ col }) => (
+    <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
+      {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
+    </span>
+  );
+
+  const thStyle = (col) => ({
+    textAlign: col === "name" || col === "program" ? "left" : "right",
+    padding:"10px 14px",
+    color: sortCol === col ? C.accent : C.muted,
+    fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:.4,
+    cursor:"pointer", whiteSpace:"nowrap", userSelect:"none",
+    background: sortCol === col ? C.accentLight : C.soft,
+    borderBottom:`1px solid ${C.line}`,
+  });
+
+  const numCell = (v, highlight) => (
+    <td style={{ padding:"10px 14px", textAlign:"right", fontWeight: highlight ? 700 : 500,
+      color: highlight ? "#7c3aed" : C.ink, background: highlight && v > 0 ? "#fdf4ff" : undefined }}>
+      {v}
+    </td>
+  );
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom:24 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>สรุปการจองรายนิสิต</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>จำนวนครั้งที่นิสิตแต่ละคนจองยูนิต รวมถึงการจองแบบผี</p>
+      </div>
+
+      {/* Controls */}
+      <div style={{ ...cardStyle, marginBottom:20, padding:"18px 20px" }}>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8, alignItems:"center", marginBottom:16 }}>
+          <span style={{ fontSize:12.5, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:.4, marginRight:4 }}>ช่วงเวลา</span>
+          {presets.map(p => (
+            <button key={p.k} onClick={() => applyPreset(p.k)}
+              style={{ ...btnStyle(preset === p.k ? "primary" : "ghost"), fontSize:12.5, padding:"6px 14px" }}>
+              {p.l}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"center" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <label style={{ ...lblStyle, marginBottom:0 }}>ตั้งแต่</label>
+            <input type="date" style={{ ...inpStyle, width:160 }} value={fromDate}
+              onChange={e => { setFrom(e.target.value); setPreset("custom"); }} />
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <label style={{ ...lblStyle, marginBottom:0 }}>ถึง</label>
+            <input type="date" style={{ ...inpStyle, width:160 }} value={toDate}
+              onChange={e => { setTo(e.target.value); setPreset("custom"); }} />
+          </div>
+          <input style={{ ...inpStyle, maxWidth:220, marginLeft:"auto" }}
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหาชื่อ หรือรหัสนิสิต…" />
+        </div>
+      </div>
+
+      {/* Stats strip */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:20 }}>
+        {[
+          { label:"นิสิตที่มีการจอง", value:rows.length, color:C.accent, bg:C.accentLight },
+          { label:"จองทั้งหมด", value:totalRes, color:C.ink, bg:C.soft },
+          { label:"ผี 👻 ทั้งหมด", value:totalGhost, color:"#7c3aed", bg:"#fdf4ff" },
+        ].map(s => (
+          <div key={s.label} style={{ ...cardStyle, padding:"16px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:26, fontWeight:700, color:s.color, fontFamily:"'Cormorant Garamond',serif" }}>{s.value}</div>
+            <div style={{ fontSize:12, color:C.muted, marginTop:3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:`1px solid ${C.line}` }}>
+          <span style={{ fontSize:13.5, fontWeight:600 }}>
+            {rows.length} นิสิต · {presetLabel}
+          </span>
+          <button
+            style={{ ...btnStyle("primary"), padding:"7px 16px", fontSize:12.5 }}
+            onClick={() => printStudentSummaryReport({ rows, fromDate, toDate, periodLabel:presetLabel })}>
+            🖨 พิมพ์รายงาน
+          </button>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle("name"), textAlign:"left", width:40, paddingLeft:18 }}>#</th>
+                <th style={{ ...thStyle("name"), textAlign:"left" }} onClick={() => toggleSort("name")}>
+                  ชื่อนิสิต <SortIcon col="name" />
+                </th>
+                <th style={{ ...thStyle("id"), textAlign:"left" }} onClick={() => toggleSort("id")}>
+                  รหัส <SortIcon col="id" />
+                </th>
+                <th style={{ ...thStyle("program"), textAlign:"left" }} onClick={() => toggleSort("program")}>
+                  หลักสูตร <SortIcon col="program" />
+                </th>
+                <th style={thStyle("total")} onClick={() => toggleSort("total")}>
+                  จองทั้งหมด <SortIcon col="total" />
+                </th>
+                <th style={{ ...thStyle("ghost"), color: sortCol === "ghost" ? "#7c3aed" : C.muted }} onClick={() => toggleSort("ghost")}>
+                  ผี 👻 <SortIcon col="ghost" />
+                </th>
+                <th style={thStyle("normal")} onClick={() => toggleSort("normal")}>
+                  ปกติ <SortIcon col="normal" />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={7} style={{ padding:"40px", textAlign:"center", color:C.muted }}>
+                  ไม่พบข้อมูลการจองในช่วงเวลาที่เลือก
+                </td></tr>
+              ) : rows.map((r, i) => (
+                <tr key={r.id} style={{ borderBottom:`1px solid ${C.line}` }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.soft}
+                  onMouseLeave={e => e.currentTarget.style.background = ""}>
+                  <td style={{ padding:"10px 14px 10px 18px", color:C.faint, fontSize:12 }}>{i + 1}</td>
+                  <td style={{ padding:"10px 14px", fontWeight:500 }}>{r.name}</td>
+                  <td style={{ padding:"10px 14px", color:C.muted, fontFamily:"monospace", fontSize:12.5 }}>{r.id}</td>
+                  <td style={{ padding:"10px 14px" }}>
+                    {r.program !== "—" ? <Badge t="active">{r.program}</Badge> : <span style={{ color:C.faint }}>—</span>}
+                  </td>
+                  {numCell(r.total, false)}
+                  {numCell(r.ghost, true)}
+                  {numCell(r.normal, false)}
+                </tr>
+              ))}
+              {rows.length > 0 && (
+                <tr style={{ borderTop:`2px solid ${C.line}`, background:C.soft }}>
+                  <td colSpan={4} style={{ padding:"10px 14px 10px 18px", fontWeight:700, fontSize:12.5, color:C.muted, textTransform:"uppercase", letterSpacing:.4 }}>รวม</td>
+                  <td style={{ padding:"10px 14px", textAlign:"right", fontWeight:700 }}>{totalRes}</td>
+                  <td style={{ padding:"10px 14px", textAlign:"right", fontWeight:700, color:"#7c3aed" }}>{totalGhost}</td>
+                  <td style={{ padding:"10px 14px", textAlign:"right", fontWeight:700 }}>{totalNorm}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
   const [tab, setTab]             = useState("upcoming");
   const [searchInput, setSearch]  = useState("");
@@ -2519,7 +2828,7 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
     ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
     : user.role==="advisor"
     ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"my-res",i:"📋",l:"การจอง"}]
-    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"}];
+    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"},{k:"admin-summary",i:"📊",l:"สรุปรายนิสิต"}];
   return (
     <aside style={{ width:235, background:C.ink, minHeight:"100vh", display:"flex", flexDirection:"column", flexShrink:0 }}>
       <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
@@ -2788,6 +3097,7 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
         {page==="admin-users"       && <AdminManageUsersPage students={students} setStudents={setStudents} advisors={advisors} setAdvisors={setAdvisors} notify={notify} />}
         {page==="admin-units"       && <AdminUnitsPage units={units} setUnits={setUnits} advisors={advisors} sessionAdvisors={sessionAdvisors} reservations={reservations} notify={notify} />}
         {page==="admin-res"         && <AdminReservationsPage reservations={reservations} units={units} onUpdateStatus={updateStatus} />}
+        {page==="admin-summary"     && <AdminStudentSummaryPage reservations={reservations} students={students} />}
       </main>
       {loading && <LoadingOverlay text="กำลังโหลดข้อมูลจาก Google Sheets…" />}
       {toast   && <Toast msg={toast} onClose={()=>setToast(null)} />}
