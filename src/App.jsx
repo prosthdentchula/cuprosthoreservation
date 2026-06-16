@@ -2426,11 +2426,117 @@ function AdminStudentSummaryPage({ reservations, students }) {
   );
 }
 
-function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
+/* ═══ ADMIN ADD RESERVATION MODAL ════════════════════════════════════════════════
+   Allows admin to manually create a reservation on behalf of any student.
+   Bypasses all time restrictions (booking cutoff, weekends, Wednesday afternoons).
+   The reservation is flagged with addedByAdmin: true.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function AdminAddReservationModal({ units, students, reservations, onConfirm, onClose }) {
+  const allDates = Array.from({length:60}, (_,i) => {
+    const d = new Date(today); d.setDate(d.getDate() + i - 7); return getLocalISO(d);
+  }).filter(d => !isWeekend(d));
+
+  const [date,        setDate]        = useState(next14Days[0]);
+  const [session,     setSession]     = useState("morning");
+  const [unitId,      setUnitId]      = useState("");
+  const [studentId,   setStudentId]   = useState("");
+  const [patientName, setPatientName] = useState("");
+  const [hn,          setHn]          = useState("");
+  const [treatment,   setTreatment]   = useState("");
+  const [err,         setErr]         = useState("");
+
+  const activeUnits = units.filter(u => u.status === "active");
+  const availSess   = ["morning", ...(isWednesday(date) ? [] : ["afternoon"])];
+
+  const existingBks = unitId
+    ? reservations.filter(r => r.date === date && r.session === session && r.unitId === Number(unitId) && r.status !== "cancelled")
+    : [];
+  const overbooked = existingBks.length > 0;
+
+  const submit = () => {
+    setErr("");
+    if (!unitId)             return setErr("กรุณาเลือกยูนิต");
+    if (!studentId)          return setErr("กรุณาเลือกนิสิต");
+    if (!patientName.trim()) return setErr("กรุณากรอกชื่อผู้ป่วย");
+    if (!hn.trim())          return setErr("กรุณากรอก HN");
+    if (!treatment.trim())   return setErr("กรุณากรอกการรักษา");
+    const unit    = units.find(u => u.id === Number(unitId));
+    const student = students.find(s => s.id === studentId);
+    onConfirm({ unit, student, date, session, patientName, hn, treatment, overbooked });
+  };
+
+  return (
+    <Modal title="➕ เพิ่มการจองโดยแอดมิน" onClose={onClose} wide>
+      <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:8, padding:"10px 14px", marginBottom:18, fontSize:13, color:"#92400e" }}>
+        <strong>🔑 สิทธิ์แอดมิน:</strong> การจองนี้จะถูกบันทึกว่า <strong>"เพิ่มโดยแอดมิน"</strong> และไม่มีข้อจำกัดด้านเวลา
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 }}>
+        <div>
+          <label style={lblStyle}>วันที่ *</label>
+          <select value={date} onChange={e => { setDate(e.target.value); setSession("morning"); }} style={inpStyle}>
+            {allDates.map(d => <option key={d} value={d}>{displayDate(d)}{d === todayStr ? " (วันนี้)" : ""}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lblStyle}>ช่วงเวลา *</label>
+          <select value={session} onChange={e => setSession(e.target.value)} style={inpStyle}>
+            {availSess.map(s => <option key={s} value={s}>{s === "morning" ? "☀ ช่วงเช้า 09:00–12:00" : "🌤 ช่วงบ่าย 13:00–16:00"}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lblStyle}>ยูนิต *</label>
+          <select value={unitId} onChange={e => setUnitId(e.target.value)} style={inpStyle}>
+            <option value="">— เลือกยูนิต —</option>
+            {activeUnits.sort((a,b) => a.id - b.id).map(u => {
+              const bks = reservations.filter(r => r.date === date && r.session === session && r.unitId === u.id && r.status !== "cancelled").length;
+              return <option key={u.id} value={u.id}>{u.name} (Zone {u.zone}){bks > 0 ? ` ⚠ จองแล้ว ${bks}` : ""}</option>;
+            })}
+          </select>
+        </div>
+        <div>
+          <label style={lblStyle}>นิสิต *</label>
+          <select value={studentId} onChange={e => setStudentId(e.target.value)} style={inpStyle}>
+            <option value="">— เลือกนิสิต —</option>
+            {students.filter(s => s.active !== false).map(s => (
+              <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {overbooked && (
+        <div style={{ background:C.amberBg, border:`1px solid ${C.amberLine}`, borderRadius:8, padding:"9px 13px", marginBottom:14, fontSize:13 }}>
+          ⚠ ยูนิตนี้มีการจองอยู่แล้ว {existingBks.length} รายการ การเพิ่มจะเป็น Overbook
+        </div>
+      )}
+      <div style={{ display:"grid", gap:13 }}>
+        <div>
+          <label style={lblStyle}>ชื่อ-นามสกุลผู้ป่วย *</label>
+          <input style={inpStyle} value={patientName} onChange={e => setPatientName(e.target.value)} placeholder="เช่น สมชาย ทนารักษ์" />
+        </div>
+        <div>
+          <label style={lblStyle}>HN *</label>
+          <input style={inpStyle} value={hn} onChange={e => setHn(e.target.value)} placeholder="เช่น HN-20341" />
+        </div>
+        <div>
+          <label style={lblStyle}>การรักษา / หัตถการ *</label>
+          <input style={inpStyle} value={treatment} onChange={e => setTreatment(e.target.value)} placeholder="เช่น Composite Filling #36" />
+        </div>
+      </div>
+      {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
+        <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
+        <button style={{ ...btnStyle("primary"), background:"#92400e" }} onClick={submit}>➕ เพิ่มการจองโดยแอดมิน</button>
+      </div>
+    </Modal>
+  );
+}
+
+function AdminReservationsPage({ reservations, units, students, onUpdateStatus, onAdminBook }) {
   const [tab, setTab]             = useState("upcoming");
   const [searchInput, setSearch]  = useState("");
   const [search, setDebouncedSearch] = useState("");
   const [detail, setDetail]       = useState(null);
+  const [showAdd, setShowAdd]     = useState(false);
 
   useEffect(()=>{ const t=setTimeout(()=>setDebouncedSearch(searchInput),200); return ()=>clearTimeout(t); },[searchInput]);
 
@@ -2445,9 +2551,15 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
 
   return (
     <div>
-      <div style={{ marginBottom:28 }}>
-        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>การจองทั้งหมด</h2>
-        <p style={{ margin:0, color:C.muted, fontSize:14 }}>ประวัติ 3 เดือนย้อนหลัง · {all.length} รายการทั้งหมด</p>
+      <div style={{ marginBottom:28, display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>การจองทั้งหมด</h2>
+          <p style={{ margin:0, color:C.muted, fontSize:14 }}>ประวัติ 3 เดือนย้อนหลัง · {all.length} รายการทั้งหมด</p>
+        </div>
+        <button style={{ ...btnStyle("primary"), background:"#92400e", padding:"9px 20px", fontSize:13, whiteSpace:"nowrap" }}
+          onClick={() => setShowAdd(true)}>
+          ➕ เพิ่มการจองโดยแอดมิน
+        </button>
       </div>
       <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
         {[["upcoming","รอดำเนินการ"],["today","วันนี้"],["overbooked","⚠ Overbook"],["past","ผ่านมาแล้ว"],["all","ทั้งหมด"]].map(([k,l])=>(
@@ -2459,13 +2571,13 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["วันที่","ช่วง","ยูนิต","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ","ผี","ต่อยูนิต",""].map(h=>(
+              {["วันที่","ช่วง","ยูนิต","นิสิต","ผู้ป่วย","HN","การรักษา","สถานะ","ผี","ต่อยูนิต","แอดมิน",""].map(h=>(
                 <th key={h} style={{ textAlign:"left", padding:"10px 14px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, whiteSpace:"nowrap" }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {filtered.length===0?(
-                <tr><td colSpan={11} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
+                <tr><td colSpan={12} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
               ):filtered.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
                 const unit = units.find(u=>u.id===r.unitId);
                 return (
@@ -2481,6 +2593,7 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
                     <td style={{ padding:"9px 14px" }}><Badge t={r.overbooked?"overbooked":r.status}>{r.overbooked?"⚠ Over":r.status==="confirmed"?"ยืนยันแล้ว":r.status==="cancelled"?"ยกเลิก":"รอดำเนินการ"}</Badge></td>
                     <td style={{ padding:"9px 14px" }}>{r.isGhost?<span style={{ color:"#7c3aed", fontWeight:600 }}>👻</span>:<span style={{ color:C.faint }}>—</span>}</td>
                     <td style={{ padding:"9px 14px" }}>{r.inheritUnit?<span style={{ background:"#fffbeb", color:"#d97706", borderRadius:6, padding:"2px 8px", fontSize:11.5, fontWeight:600 }}>🔗 ต่อ</span>:<span style={{ color:C.faint }}>—</span>}</td>
+                    <td style={{ padding:"9px 14px" }}>{r.addedByAdmin?<span style={{ background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700 }}>🔑 แอดมิน</span>:<span style={{ color:C.faint }}>—</span>}</td>
                     <td style={{ padding:"9px 14px" }} onClick={e=>e.stopPropagation()}>
                       {r.status==="pending"&&<button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={()=>onUpdateStatus(r.id,"confirmed")}>ยืนยัน</button>}
                       {r.status==="confirmed"&&r.date>=todayStr&&<button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={()=>onUpdateStatus(r.id,"cancelled")}>ยกเลิก</button>}
@@ -2503,6 +2616,7 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
               ["Overbooked",detail.overbooked?"⚠ ใช่":"ไม่มี"],
               ["ผี",detail.isGhost?"👻 ใช่":"ไม่ใช่"],
               ["ต่อยูนิต",detail.inheritUnit?"🔗 ใช่ — ใช้ยูนิตต่อจากนิสิตคนก่อน":"ไม่ใช่"],
+              ["เพิ่มโดยแอดมิน",detail.addedByAdmin?"🔑 ใช่ — เพิ่มโดยผู้ดูแลระบบ":"ไม่ใช่"],
             ].map(([k,v])=>(
               <div key={k} style={{ display:"flex", paddingBottom:10, borderBottom:`1px solid ${C.line}` }}>
                 <span style={{ width:150, flexShrink:0, fontSize:12.5, color:C.muted, fontWeight:600, textTransform:"uppercase", letterSpacing:0.3 }}>{k}</span>
@@ -2511,6 +2625,18 @@ function AdminReservationsPage({ reservations, units, onUpdateStatus }) {
             ))}
           </div>
         </Modal>
+      )}
+      {showAdd && (
+        <AdminAddReservationModal
+          units={units}
+          students={students}
+          reservations={reservations}
+          onConfirm={({ unit, student, date, session, patientName, hn, treatment, overbooked }) => {
+            onAdminBook({ unit, student, date, session, patientName, hn, treatment, overbooked });
+            setShowAdd(false);
+          }}
+          onClose={() => setShowAdd(false)}
+        />
       )}
     </div>
   );
@@ -3030,6 +3156,26 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     }
   };
 
+  const adminBook = async ({ unit, student, date, session, patientName, hn, treatment, overbooked }) => {
+    const newRes = {
+      id: generateId("reservation", reservations),
+      studentId: student.id, studentName: student.name,
+      unitId: unit.id, date, session, patientName, hn, treatment,
+      status: "confirmed", createdAt: todayStr,
+      overbooked: !!overbooked, isGhost: false, inheritUnit: false,
+      addedByAdmin: true,
+    };
+    setReservations(p => [...p, newRes]);
+    notify(`🔑 แอดมินเพิ่มการจอง ${unit.name} ให้ ${student.name} — กำลังบันทึก`);
+    try {
+      await SheetsDB.writeReservation(newRes);
+      notify(`✓ บันทึกการจองโดยแอดมิน ยูนิต ${unit.name} เสร็จสมบูรณ์`);
+    } catch (error) {
+      setReservations(p => p.filter(r => r.id !== newRes.id));
+      notify(`⚠ บันทึกไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
   const editReservation = async (id, fields) => {
     const prev = [...reservations];
     setReservations(p=>p.map(r=>r.id===id?{...r,...fields}:r));
@@ -3110,7 +3256,7 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
         }
         {page==="admin-users"       && <AdminManageUsersPage students={students} setStudents={setStudents} advisors={advisors} setAdvisors={setAdvisors} notify={notify} />}
         {page==="admin-units"       && <AdminUnitsPage units={units} setUnits={setUnits} advisors={advisors} sessionAdvisors={sessionAdvisors} reservations={reservations} notify={notify} />}
-        {page==="admin-res"         && <AdminReservationsPage reservations={reservations} units={units} onUpdateStatus={updateStatus} />}
+        {page==="admin-res"         && <AdminReservationsPage reservations={reservations} units={units} students={students} onUpdateStatus={updateStatus} onAdminBook={adminBook} />}
         {page==="admin-summary"     && <AdminStudentSummaryPage reservations={reservations} students={students} />}
       </main>
       {loading && <LoadingOverlay text="กำลังโหลดข้อมูลจาก Google Sheets…" />}
