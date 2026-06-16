@@ -131,8 +131,8 @@ export function parseReservations(rows) {
     overbooked:  String(r[10] !== "" && r[10] !== undefined ? r[10] : "FALSE").toUpperCase() === "TRUE",
     createdAt:   r[11] || "",
     isGhost:     String(r[12] !== "" && r[12] !== undefined ? r[12] : "FALSE").toUpperCase() === "TRUE",
-    // ADD THIS LINE BELOW
-    inheritUnit: String(r[13] !== "" && r[13] !== undefined ? r[13] : "FALSE").toUpperCase() === "TRUE",
+    inheritUnit:   String(r[13] !== "" && r[13] !== undefined ? r[13] : "FALSE").toUpperCase() === "TRUE",
+    addedByAdmin:  String(r[14] !== "" && r[14] !== undefined ? r[14] : "FALSE").toUpperCase() === "TRUE",
   }));
 }
 
@@ -184,11 +184,10 @@ async writeReservation(res) {
       res.date, res.session, res.patientName, res.hn, res.treatment,
       res.status, res.overbooked ? "TRUE" : "FALSE", res.createdAt,
       res.isGhost ? "TRUE" : "FALSE",
-      // ADD THIS LINE BELOW
-      res.inheritUnit ? "TRUE" : "FALSE" 
+      res.inheritUnit ? "TRUE" : "FALSE",
+      res.addedByAdmin ? "TRUE" : "FALSE",
     ];
-    // UPDATE THE RANGE TO INCLUDE COLUMN N
-    return apiAppend("Reservations!A:N", [row]); 
+    return apiAppend("Reservations!A:O", [row]);
   },
 
   async updateReservationFields(reservationId, { patientName, hn, treatment }) {
