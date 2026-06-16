@@ -1062,8 +1062,8 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
         const uCell = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
-        const isFirstRow = i === 0;
-        return `<tr class="${isOver?"p-over":""}${isFirstRow?" p-unit-start":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d p-treatment">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
+        const isLastRow = i === bks.length - 1;
+        return `<tr class="${isOver?"p-over":""}${isLastRow?" p-unit-end":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d p-treatment">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -1169,7 +1169,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     #${ROOT_ID} .p-c    { padding:0.22em 0.55em; text-align:center; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
     #${ROOT_ID} .p-over { background:#fef3c7; }
     #${ROOT_ID} .p-ov   { border-top:2px solid #fcd34d; }
-    #${ROOT_ID} tr.p-unit-start td { border-top:2px solid #16191f !important; }
+    #${ROOT_ID} tr.p-unit-end td { border-bottom:2px solid #16191f; }
     #${ROOT_ID} .p-ovl  { font-size:0.75em; color:#92400e; font-weight:700; }
     #${ROOT_ID} .p-inh  { color:#d97706; font-weight:600; }
     #${ROOT_ID} .p-empty{ margin:0; padding:0.4em 0.7em; font-size:0.85em; color:#9ca3af; border:1px solid #e5e7eb; border-top:none; }
