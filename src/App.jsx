@@ -1059,11 +1059,12 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
       return bks.map((b, i) => {
         const isOver      = bks.length > 1;
         const inheritMark = b.inheritUnit ? `<span class="p-inh">🔗</span>` : "—";
+        const ghostMark    = b.isGhost ? `<span class="p-ghost">👻</span>` : "—";
         const uCell = i === 0
           ? `<td class="p-u${isOver?" p-ov":""}" rowspan="${bks.length}">${unit.name}${isOver?`<br><span class="p-ovl">⚠ OVER×${bks.length}</span>`:""}</td>`
           : "";
         const isLastRow = i === bks.length - 1;
-        return `<tr class="${isOver?"p-over":""}${isLastRow?" p-unit-end":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d p-treatment">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${inheritMark}</td></tr>`;
+        return `<tr class="${isOver?"p-over":""}${b.isGhost?" p-ghost-row":""}${isLastRow?" p-unit-end":""}">${uCell}<td class="p-d">${b.studentName}</td><td class="p-d">${b.patientName}</td><td class="p-d">${b.hn}</td><td class="p-d p-treatment">${b.treatment}</td><td class="p-c">${isOver?"⚠":"✓"}</td><td class="p-c">${ghostMark}</td><td class="p-c">${inheritMark}</td></tr>`;
       }).join("");
     }).join("");
 
@@ -1087,6 +1088,7 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
             <th class="p-th" style="width:10%">HN</th>
             <th class="p-th">การรักษา / หัตถการ</th>
             <th class="p-th" style="width:44px;text-align:center">สถานะ</th>
+            <th class="p-th" style="width:44px;text-align:center">ผี</th>
             <th class="p-th" style="width:52px;text-align:center">ต่อยูนิต</th>
            </tr></thead><tbody>${unitRows}</tbody></table>`
         : `<p class="p-empty">ไม่มีการจองในโซนนี้</p>`}
@@ -1172,6 +1174,8 @@ function printSessionSummary({ dateStr, session, reservations, units, advisors, 
     #${ROOT_ID} tr.p-unit-end td { border-bottom:2px solid #16191f; }
     #${ROOT_ID} .p-ovl  { font-size:0.75em; color:#92400e; font-weight:700; }
     #${ROOT_ID} .p-inh  { color:#d97706; font-weight:600; }
+    #${ROOT_ID} .p-ghost     { color:#7c3aed; font-weight:600; }
+    #${ROOT_ID} tr.p-ghost-row { background:#fdf4ff; }
     #${ROOT_ID} .p-empty{ margin:0; padding:0.4em 0.7em; font-size:0.85em; color:#9ca3af; border:1px solid #e5e7eb; border-top:none; }
 
     /* Footer */
