@@ -327,7 +327,7 @@ function ChangePasswordModal({ user, onSave, onClose }) {
 }
 
 /* ═══ LOGIN ══════════════════════════════════════════════════════════════════════ */
-function LoginPage({ onLogin, students, advisors, admins, sheetsReady, onSyncReady }) {
+function LoginPage({ onLogin, students, advisors, admins, sheetsReady, loadError, onRetry, onSyncReady }) {
   const [role, setRole]       = useState("student");
   const [username, setUser]   = useState("");
   const [pass, setPass]       = useState("");
@@ -335,13 +335,16 @@ function LoginPage({ onLogin, students, advisors, admins, sheetsReady, onSyncRea
   const [waiting, setWaiting] = useState(false); // true while polling for sync to finish
 
   /* go() — validate credentials.
-     If Sheets hasn't finished loading yet (sheetsReady=false), poll every 250 ms
-     until it is done — then validate against the live data instead of seed data.
-     This eliminates false "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" errors during initial sync. */
+     If Sheets hasn't finished loading yet (sheetsReady=false) AND there's no
+     load error, poll every 250ms until it is done — then validate against the
+     live data instead of seed data. If a load error is already present, don't
+     poll at all — just validate against whatever's currently in state (seed
+     data, or a previously successful sync), so a permanent server-side outage
+     doesn't permanently lock everyone out of the login screen. */
   const go = async () => {
     setErr("");
 
-    if (!sheetsReady) {
+    if (!sheetsReady && !loadError) {
       setWaiting(true);
       await new Promise(resolve => {
         const poll = setInterval(() => {
@@ -376,7 +379,9 @@ function LoginPage({ onLogin, students, advisors, admins, sheetsReady, onSyncRea
     }
   };
 
-  const isBusy = !sheetsReady || waiting;
+  // Only block the form while genuinely still loading — a load error means
+  // loading has stopped (even if unsuccessfully), so don't keep it disabled.
+  const isBusy = (!sheetsReady && !loadError) || waiting;
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -386,6 +391,25 @@ function LoginPage({ onLogin, students, advisors, admins, sheetsReady, onSyncRea
           <h1 style={{ margin:0, fontFamily:"'Cormorant Garamond',serif", fontSize:34, fontWeight:600, letterSpacing:-0.5, color:C.ink }}>CUProstho</h1>
           <p style={{ margin:"5px 0 0", color:C.muted, fontSize:14 }}>คณะทันตแพทยศาสตร์ · ระบบจองยูนิต</p>
         </div>
+
+        {loadError && (
+          <div style={{ background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, padding:"12px 16px", marginBottom:16, fontSize:13, color:C.red }}>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:16, flexShrink:0 }}>⚠</span>
+              <div>
+                <strong>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</strong>
+                <p style={{ margin:"3px 0 0", fontSize:12.5, opacity:0.9 }}>{loadError}</p>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ fontSize:11.5, opacity:0.8 }}>คุณยังสามารถลองเข้าสู่ระบบด้วยข้อมูลที่มีอยู่ได้</span>
+              <button onClick={onRetry} style={{ ...btnStyle("ghost"), padding:"5px 12px", fontSize:12, color:C.red, border:"1px solid #fca5a5", whiteSpace:"nowrap" }}>
+                ↻ ลองใหม่
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ ...cardStyle, boxShadow:"0 4px 24px rgba(0,0,0,0.07)" }}>
           <div style={{ display:"flex", background:C.soft, borderRadius:8, padding:3, marginBottom:22 }}>
             {[["student","นิสิต"],["advisor","อาจารย์"],["admin","แอดมิน"]].map(([r,l])=>(
@@ -3233,7 +3257,18 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     notify("✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
   };
 
-  if (!user) return <LoginPage onLogin={login} students={students} advisors={advisors} admins={admins} sheetsReady={sheetsReady} onSyncReady={()=>sheetsReady} />;
+  if (!user) return (
+    <LoginPage
+      onLogin={login}
+      students={students}
+      advisors={advisors}
+      admins={admins}
+      sheetsReady={sheetsReady}
+      loadError={loadError}
+      onRetry={loadFromSheets}
+      onSyncReady={() => sheetsReady || !!loadError}
+    />
+  );
 
   return (
     <div style={{ fontFamily:"'Sarabun','Outfit',sans-serif", background:C.soft, minHeight:"100vh", display:"flex", color:C.ink }}>
