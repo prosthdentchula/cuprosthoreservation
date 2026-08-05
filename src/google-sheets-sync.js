@@ -166,16 +166,28 @@ export const SheetsDB = {
 
   // Uses the ultra-fast backend payload to fetch everything in 1 network request
   async syncAll() {
-    const j = await gasPost({ action: "syncAll" });
-    return {
-      advisors:        parseAdvisors(j.data.advisors),
-      students:        parseStudents(j.data.students),
-      units:           parseUnits(j.data.units),
-      sessionAdvisors: parseSessionAdvisors(j.data.sessionAdvisors),
-      reservations:    parseReservations(j.data.reservations),
-      admins:          parseAdmins(j.data.admins),
-      monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
-    };
+    const MAX_ATTEMPTS = 3;
+    let lastErr;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const j = await gasPost({ action: "syncAll" });
+        return {
+          advisors:        parseAdvisors(j.data.advisors),
+          students:        parseStudents(j.data.students),
+          units:           parseUnits(j.data.units),
+          sessionAdvisors: parseSessionAdvisors(j.data.sessionAdvisors),
+          reservations:    parseReservations(j.data.reservations),
+          admins:          parseAdmins(j.data.admins),
+          monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
+        };
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // 1s, then 2s
+        }
+      }
+    }
+    throw lastErr;
   },
 
 async writeReservation(res) {
