@@ -15,10 +15,9 @@ export async function initGoogleAuth() {
 }
 
 // ── Low-level GAS Fetch Helpers ───────────────────────────────────────────────
-async function gasPost(payload) {
+async function gasPost(payload, attemptTimeoutMs = 25000) {
   const controller = new AbortController();
-  // Abort after 20 seconds — covers GAS cold-start time without hanging forever
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const timeoutId = setTimeout(() => controller.abort(), attemptTimeoutMs);
 
   const urlWithCacheBuster = `${WEB_APP_URL}?t=${Date.now()}`;
 
@@ -33,8 +32,6 @@ async function gasPost(payload) {
 
     const text = await r.text();
 
-    // GAS sometimes returns an HTML redirect page instead of JSON on cold starts.
-    // Detecting this early gives a meaningful error instead of "Invalid JSON".
     if (!text.trimStart().startsWith("{") && !text.trimStart().startsWith("[")) {
       throw new Error(
         "GAS ส่งค่าที่ไม่ใช่ JSON กลับมา (น่าจะเป็น redirect) — ลองใหม่ หรือ redeploy script เป็น version ใหม่"
@@ -46,7 +43,7 @@ async function gasPost(payload) {
     return j;
   } catch (err) {
     if (err.name === "AbortError") {
-      throw new Error("การเชื่อมต่อหมดเวลา (20 วินาที) — กรุณาลองใหม่อีกครั้ง");
+      throw new Error(`การเชื่อมต่อหมดเวลา (${attemptTimeoutMs/1000} วินาที) — กรุณาลองใหม่อีกครั้ง`);
     }
     throw err;
   } finally {
@@ -165,30 +162,31 @@ export function parseMonthlyLineups(rows) {
 export const SheetsDB = {
 
   // Uses the ultra-fast backend payload to fetch everything in 1 network request
-  async syncAll() {
-    const MAX_ATTEMPTS = 3;
-    let lastErr;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        const j = await gasPost({ action: "syncAll" });
-        return {
-          advisors:        parseAdvisors(j.data.advisors),
-          students:        parseStudents(j.data.students),
-          units:           parseUnits(j.data.units),
-          sessionAdvisors: parseSessionAdvisors(j.data.sessionAdvisors),
-          reservations:    parseReservations(j.data.reservations),
-          admins:          parseAdmins(j.data.admins),
-          monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
-        };
-      } catch (err) {
-        lastErr = err;
-        if (attempt < MAX_ATTEMPTS) {
-          await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // 1s, then 2s
-        }
+async syncAll() {
+  const MAX_ATTEMPTS = 3;
+  const TIMEOUTS = [25000, 15000, 15000]; // first attempt: generous, for cold start
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const j = await gasPost({ action: "syncAll" }, TIMEOUTS[attempt - 1]);
+      return {
+        advisors:        parseAdvisors(j.data.advisors),
+        students:        parseStudents(j.data.students),
+        units:           parseUnits(j.data.units),
+        sessionAdvisors: parseSessionAdvisors(j.data.sessionAdvisors),
+        reservations:    parseReservations(j.data.reservations),
+        admins:          parseAdmins(j.data.admins),
+        monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
+      };
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // short gap, don't burn the budget
       }
     }
-    throw lastErr;
-  },
+  }
+  throw lastErr;
+},
 
 async writeReservation(res) {
     const row = [
