@@ -3402,7 +3402,6 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
           onClose={()=>setShowPwModal(false)} />
       )}
     </aside>
-  );
 }
 
 /* ═══ APP ROOT ══════════════════════════════════════════════════════════════════ */
