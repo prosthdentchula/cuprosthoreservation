@@ -3355,7 +3355,6 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
 /* ═══ SIDEBAR ════════════════════════════════════════════════════════════════════ */
 function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword }) {
   const [showPwModal, setShowPwModal] = useState(false);
-  const nav = user.role==="student"
    const nav = user.role==="student"
     ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"equip-browse",i:"🔬",l:"จองอุปกรณ์"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
     : user.role==="advisor"
