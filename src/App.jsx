@@ -3355,51 +3355,199 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
 /* ═══ SIDEBAR ════════════════════════════════════════════════════════════════════ */
 function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword }) {
   const [showPwModal, setShowPwModal] = useState(false);
-   const nav = user.role==="student"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"equip-browse",i:"🔬",l:"จองอุปกรณ์"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
-    : user.role==="advisor"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"equip-browse",i:"🔬",l:"จองอุปกรณ์"},{k:"my-res",i:"📋",l:"การจอง"}]
-    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-equipment",i:"🔬",l:"จัดการอุปกรณ์"},{k:"admin-equip-res",i:"📋",l:"การจองอุปกรณ์"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"},{k:"admin-summary",i:"📊",l:"สรุปรายนิสิต"}];
-    <aside style={{ width:235, background:C.ink, minHeight:"100vh", display:"flex", flexDirection:"column", flexShrink:0 }}>
-      <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:22 }}>🦷</span>
-          <span style={{ fontFamily:"'Cormorant Garamond',serif", color:"#fff", fontSize:22, fontWeight:600 }}>CUProstho</span>
+
+  const nav = user.role === "student"
+    ? [
+        { k: "browse", i: "⊞", l: "จองยูนิต" },
+        { k: "overview", i: "◎", l: "ภาพรวมยูนิต" },
+        { k: "equip-browse", i: "🔬", l: "จองอุปกรณ์" },
+        { k: "my-res", i: "📋", l: "การจองของฉัน" }
+      ]
+    : user.role === "advisor"
+    ? [
+        { k: "browse", i: "⊞", l: "จองยูนิต" },
+        { k: "equip-browse", i: "🔬", l: "จองอุปกรณ์" },
+        { k: "my-res", i: "📋", l: "การจอง" }
+      ]
+    : [
+        { k: "admin-overview", i: "◎", l: "ภาพรวม" },
+        { k: "admin-session-advisors", i: "👨‍⚕️", l: "อาจารย์นิเทศ" },
+        { k: "admin-monthly-lineup", i: "📅", l: "ตารางเวร" },
+        { k: "admin-users", i: "👥", l: "จัดการผู้ใช้" },
+        { k: "admin-units", i: "⊞", l: "จัดการยูนิต" },
+        { k: "admin-equipment", i: "🔬", l: "จัดการอุปกรณ์" },
+        { k: "admin-equip-res", i: "📋", l: "การจองอุปกรณ์" },
+        { k: "admin-res", i: "📋", l: "การจองทั้งหมด" },
+        { k: "admin-summary", i: "📊", l: "สรุปรายนิสิต" }
+      ];
+
+  return (
+    <aside
+      style={{
+        width: 235,
+        background: C.ink,
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0
+      }}
+    >
+      <div
+        style={{
+          padding: "24px 20px 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.07)"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>🦷</span>
+          <span
+            style={{
+              fontFamily: "'Cormorant Garamond',serif",
+              color: "#fff",
+              fontSize: 22,
+              fontWeight: 600
+            }}
+          >
+            CUProstho
+          </span>
         </div>
-        <p style={{ margin:"5px 0 0", fontSize:10.5, color:"rgba(255,255,255,0.25)", letterSpacing:0.7, textTransform:"uppercase" }}>คณะทันตแพทยศาสตร์</p>
+
+        <p
+          style={{
+            margin: "5px 0 0",
+            fontSize: 10.5,
+            color: "rgba(255,255,255,0.25)",
+            letterSpacing: 0.7,
+            textTransform: "uppercase"
+          }}
+        >
+          คณะทันตแพทยศาสตร์
+        </p>
       </div>
-      <nav style={{ padding:"14px 10px", flex:1 }}>
-        {nav.map(x=>(
-          <button key={x.k} onClick={()=>setPage(x.k)} style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"9px 12px", borderRadius:8, border:"none", cursor:"pointer", fontFamily:"'Sarabun','Outfit',sans-serif", fontSize:13.5, fontWeight:page===x.k?500:400, background:page===x.k?"rgba(255,255,255,0.1)":"transparent", color:page===x.k?"#fff":"rgba(255,255,255,0.4)", transition:"all .15s", marginBottom:2, textAlign:"left" }}>
-            <span style={{ fontSize:14 }}>{x.i}</span>{x.l}
+
+      <nav style={{ padding: "14px 10px", flex: 1 }}>
+        {nav.map(x => (
+          <button
+            key={x.k}
+            onClick={() => setPage(x.k)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              width: "100%",
+              padding: "9px 12px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "'Sarabun','Outfit',sans-serif",
+              fontSize: 13.5,
+              fontWeight: page === x.k ? 500 : 400,
+              background:
+                page === x.k
+                  ? "rgba(255,255,255,0.1)"
+                  : "transparent",
+              color:
+                page === x.k
+                  ? "#fff"
+                  : "rgba(255,255,255,0.4)",
+              transition: "all .15s",
+              marginBottom: 2,
+              textAlign: "left"
+            }}
+          >
+            <span style={{ fontSize: 14 }}>{x.i}</span>
+            {x.l}
           </button>
         ))}
       </nav>
-      <div style={{ padding:"14px 20px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
-        <p style={{ margin:"0 0 1px", fontSize:13.5, fontWeight:500, color:"#fff" }}>{user.name}</p>
-        <p style={{ margin:"0 0 12px", fontSize:12, color:"rgba(255,255,255,0.3)" }}>
-          {user.role==="admin"?"ผู้ดูแลระบบ":user.role==="advisor"?"อาจารย์นิเทศ":PROGRAM_LABELS[user.program]||user.program}
-          {user.role==="student" && user.enrollYear && (
-            <span style={{ display:"block", marginTop:2 }}>
+
+      <div
+        style={{
+          padding: "14px 20px 20px",
+          borderTop: "1px solid rgba(255,255,255,0.07)"
+        }}
+      >
+        <p
+          style={{
+            margin: "0 0 1px",
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: "#fff"
+          }}
+        >
+          {user.name}
+        </p>
+
+        <p
+          style={{
+            margin: "0 0 12px",
+            fontSize: 12,
+            color: "rgba(255,255,255,0.3)"
+          }}
+        >
+          {user.role === "admin"
+            ? "ผู้ดูแลระบบ"
+            : user.role === "advisor"
+            ? "อาจารย์นิเทศ"
+            : PROGRAM_LABELS[user.program] || user.program}
+
+          {user.role === "student" && user.enrollYear && (
+            <span style={{ display: "block", marginTop: 2 }}>
               ชั้นปีที่ {getClassYear(user.enrollYear)} · รุ่น {user.enrollYear}
             </span>
           )}
         </p>
-        <button onClick={onRefresh} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.9)", border:"1px solid rgba(255,255,255,0.2)", fontSize:12.5, marginBottom:8 }}>
+
+        <button
+          onClick={onRefresh}
+          style={{
+            ...btnStyle("ghost"),
+            width: "100%",
+            color: "rgba(255,255,255,0.9)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            fontSize: 12.5,
+            marginBottom: 8
+          }}
+        >
           ↻ รีเฟรชข้อมูล
         </button>
-        {(user.role==="student"||user.role==="advisor") && (
-          <button onClick={()=>setShowPwModal(true)} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.7)", border:"1px solid rgba(255,255,255,0.15)", fontSize:12.5, marginBottom:8 }}>
+
+        {(user.role === "student" || user.role === "advisor") && (
+          <button
+            onClick={() => setShowPwModal(true)}
+            style={{
+              ...btnStyle("ghost"),
+              width: "100%",
+              color: "rgba(255,255,255,0.7)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              fontSize: 12.5,
+              marginBottom: 8
+            }}
+          >
             🔑 เปลี่ยนรหัสผ่าน
           </button>
         )}
-        <button onClick={onLogout} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.35)", border:"1px solid rgba(255,255,255,0.1)", fontSize:12.5 }}>ออกจากระบบ</button>
+
+        <button
+          onClick={onLogout}
+          style={{
+            ...btnStyle("ghost"),
+            width: "100%",
+            color: "rgba(255,255,255,0.35)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: 12.5
+          }}
+        >
+          ออกจากระบบ
+        </button>
       </div>
+
       {showPwModal && (
         <ChangePasswordModal
           user={user}
           onSave={onChangePassword}
-          onClose={()=>setShowPwModal(false)} />
+          onClose={() => setShowPwModal(false)}
+        />
       )}
     </aside>
   );
