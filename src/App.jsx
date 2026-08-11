@@ -140,6 +140,29 @@ const INIT_UNITS = [
   }),
 ];
 
+/* ═══ EQUIPMENT (Intraoral Scanners & Dongles) ═══════════════════════════════ */
+const SEED_EQUIPMENT = [
+  { id:"IOS01", category:"ios", name:"iTero Element 5D",     brand:"Align Technology", subtype:"",                 serialNumber:"ITR-5D-001", status:"active" },
+  { id:"IOS02", category:"ios", name:"3Shape TRIOS 4",       brand:"3Shape",           subtype:"",                 serialNumber:"3SH-T4-001", status:"active" },
+  { id:"IOS03", category:"ios", name:"Medit i700",           brand:"Medit",            subtype:"",                 serialNumber:"MDT-I7-001", status:"active" },
+  { id:"IOS04", category:"ios", name:"CEREC Primescan",      brand:"Dentsply Sirona",  subtype:"",                 serialNumber:"DS-PS-001",  status:"active" },
+  { id:"DGL01", category:"dongle", name:"Exocad DentalCAD",     brand:"Exocad",         subtype:"CAD",              serialNumber:"DGL-EXO-01", status:"active" },
+  { id:"DGL02", category:"dongle", name:"3Shape Dental System", brand:"3Shape",         subtype:"CAD",              serialNumber:"DGL-3SH-01", status:"active" },
+  { id:"DGL03", category:"dongle", name:"Blue Sky Plan",        brand:"Blue Sky Bio",   subtype:"Implant Planning", serialNumber:"DGL-BSP-01", status:"active" },
+  { id:"DGL04", category:"dongle", name:"coDiagnostiX",         brand:"Dental Wings",   subtype:"Implant Planning", serialNumber:"DGL-CDX-01", status:"active" },
+  { id:"DGL05", category:"dongle", name:"SIMPLANT",             brand:"Dentsply Sirona",subtype:"Implant Planning", serialNumber:"DGL-SIM-01", status:"active" },
+];
+
+const EQUIP_CATEGORY_LABELS = { ios:"เครื่องสแกนช่องปาก (IOS)", dongle:"ดองเกิลโปรแกรม" };
+const EQUIP_SUBTYPE_LABELS  = { CAD:"CAD", "Implant Planning":"วางแผนรากฟันเทียม" };
+
+/* Equipment is booked per hour-block 08:00–17:00 (finer-grained than unit sessions,
+   since one scanner/dongle typically serves many students in a day). */
+const EQUIP_TIME_SLOTS = Array.from({ length: 9 }, (_, i) => {
+  const h = 8 + i;
+  return `${String(h).padStart(2, "0")}:00-${String(h + 1).padStart(2, "0")}:00`;
+});
+
 /* Auto-assign advisors for a given date+session.
    Zone A/B/C is determined purely by position in the advisors array —
    the first matching advisor gets Zone A, second gets Zone B, third gets Zone C.
@@ -202,6 +225,13 @@ function generateId(type, existingItems) {
     const nums = existingItems.map(a=>parseInt(a.id.replace(/\D/g,""),10)).filter(n=>!isNaN(n));
     const next = nums.length ? Math.max(...nums)+1 : 1;
     return `ADV${String(next).padStart(3,"0")}`;
+  }
+  if (type === "equipmentReservation") {
+    const d = todayStr.replace(/-/g, "");
+    const todayRsvs = existingItems.filter(r => r.createdAt === todayStr || r.id.startsWith(`ER-${d}`));
+    const n = String(todayRsvs.length + 1).padStart(4, "0");
+    const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `ER-${d}-${n}-${rand}`;
   }
   return `${type}-${Date.now()}`;
 }
@@ -552,6 +582,337 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   );
 }
 
+/* ═══ EQUIPMENT BOOKING MODAL ═════════════════════════════════════════════════ */
+function EquipmentBookingModal({ equipment, date, timeSlot, onConfirm, onClose }) {
+  const [purpose, setPurpose] = useState("");
+  const [caseHn, setCaseHn]   = useState("");
+  const [err, setErr]         = useState("");
+
+  const submit = () => {
+    if (!purpose.trim()) return setErr("กรุณากรอกวัตถุประสงค์การใช้งาน");
+    onConfirm({ purpose, caseHn });
+  };
+
+  return (
+    <Modal title={`จอง ${equipment.name}`} onClose={onClose}>
+      <div style={{ background:C.soft, borderRadius:8, padding:"12px 16px", marginBottom:18, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+        {[
+          ["อุปกรณ์", equipment.name],
+          ["ประเภท", EQUIP_CATEGORY_LABELS[equipment.category]],
+          equipment.subtype ? ["หมวดหมู่", EQUIP_SUBTYPE_LABELS[equipment.subtype] || equipment.subtype] : null,
+          ["วันที่", displayDate(date)],
+          ["ช่วงเวลา", timeSlot],
+        ].filter(Boolean).map(([k, v]) => (
+          <div key={k}><span style={{ ...lblStyle, marginBottom:2 }}>{k}</span><span style={{ fontSize:13.5, fontWeight:500 }}>{v}</span></div>
+        ))}
+      </div>
+      <div style={{ display:"grid", gap:14 }}>
+        <div>
+          <label style={lblStyle}>วัตถุประสงค์การใช้งาน *</label>
+          <input style={inpStyle} value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="เช่น สแกนเพื่อทำ Crown, วางแผนรากฟันเทียม" />
+        </div>
+        <div>
+          <label style={lblStyle}>เคส / HN ผู้ป่วย (ถ้ามี)</label>
+          <input style={inpStyle} value={caseHn} onChange={e => setCaseHn(e.target.value)} placeholder="เช่น HN-20341" />
+        </div>
+      </div>
+      {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
+        <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
+        <button style={btnStyle("primary")} onClick={submit}>ยืนยันการจอง</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ═══ EQUIPMENT BROWSE / BOOK (student + advisor) ═══════════════════════════════ */
+function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook }) {
+  const [category, setCategory] = useState("ios");
+  const [date, setDate]         = useState(next14Days[0]);
+  const [target, setTarget]     = useState(null); // { item, slot }
+
+  const items = equipment.filter(e => e.category === category && e.status === "active");
+  const bookingFor = (equipId, slot) =>
+    equipmentReservations.find(r => r.equipmentId === equipId && r.date === date && r.timeSlot === slot && r.status !== "cancelled");
+
+  return (
+    <div>
+      <div style={{ marginBottom:28 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จองอุปกรณ์</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>เครื่องสแกนช่องปาก (IOS) และดองเกิลโปรแกรม · จองเป็นรายชั่วโมง</p>
+      </div>
+
+      <div style={{ display:"flex", gap:8, marginBottom:18 }}>
+        {Object.entries(EQUIP_CATEGORY_LABELS).map(([k, l]) => (
+          <button key={k} onClick={() => setCategory(k)} style={{ ...btnStyle(category === k ? "primary" : "ghost"), fontSize:13 }}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom:18, padding:"14px 18px" }}>
+        <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
+          {next14Days.map(d => (
+            <button key={d} onClick={() => setDate(d)} style={{ flexShrink:0, padding:"8px 12px", borderRadius:8, border:date === d ? `1.5px solid ${C.ink}` : `1px solid ${C.line}`, background:date === d ? C.ink : "#fff", color:date === d ? "#fff" : C.ink, cursor:"pointer", fontFamily:"'Sarabun','Outfit',sans-serif", fontSize:12.5, fontWeight:500, minWidth:74, textAlign:"center" }}>
+              {shortDay(d)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ ...cardStyle, textAlign:"center", padding:"52px", color:C.muted }}>ไม่มีอุปกรณ์ในหมวดนี้</div>
+      ) : items.map(item => (
+        <div key={item.id} style={{ ...cardStyle, marginBottom:16 }}>
+          <div style={{ marginBottom:12 }}>
+            <p style={{ margin:0, fontWeight:600, fontSize:15 }}>{item.name}</p>
+            <p style={{ margin:"2px 0 0", fontSize:12, color:C.muted }}>
+              {item.brand}{item.subtype ? ` · ${EQUIP_SUBTYPE_LABELS[item.subtype] || item.subtype}` : ""} · S/N {item.serialNumber}
+            </p>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8 }}>
+            {EQUIP_TIME_SLOTS.map(slot => {
+              const bk = bookingFor(item.id, slot);
+              const isMine = bk?.studentId === user.id;
+              return (
+                <button key={slot} disabled={!!bk && !isMine}
+                  onClick={() => !bk && setTarget({ item, slot })}
+                  style={{
+                    padding:"9px 6px", borderRadius:8, fontSize:12, fontWeight:500,
+                    border:`1px solid ${bk ? (isMine ? C.greenLine : C.line) : C.line}`,
+                    background:bk ? (isMine ? C.greenBg : C.soft) : "#fff",
+                    color:bk ? (isMine ? C.green : C.faint) : C.ink,
+                    cursor:bk && !isMine ? "not-allowed" : "pointer",
+                  }}>
+                  {slot}
+                  <div style={{ fontSize:10, marginTop:2 }}>{bk ? (isMine ? "ของฉัน" : "ไม่ว่าง") : "ว่าง"}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {target && (
+        <EquipmentBookingModal equipment={target.item} date={date} timeSlot={target.slot}
+          onClose={() => setTarget(null)}
+          onConfirm={(data) => { onBook({ equipment: target.item, date, timeSlot: target.slot, ...data }); setTarget(null); }} />
+      )}
+    </div>
+  );
+}
+
+/* ═══ ADMIN — EQUIPMENT INVENTORY ═══════════════════════════════════════════════ */
+function EquipmentFormModal({ item, onSave, onClose }) {
+  const [category, setCategory]     = useState(item?.category || "ios");
+  const [name, setName]             = useState(item?.name || "");
+  const [brand, setBrand]           = useState(item?.brand || "");
+  const [subtype, setSubtype]       = useState(item?.subtype || "");
+  const [serialNumber, setSN]       = useState(item?.serialNumber || "");
+  const [err, setErr]               = useState("");
+
+  const save = () => {
+    if (!name.trim())  return setErr("กรุณากรอกชื่ออุปกรณ์");
+    if (!brand.trim()) return setErr("กรุณากรอกยี่ห้อ");
+    onSave({ id: item?.id || "", category, name, brand, subtype: category === "dongle" ? subtype : "", serialNumber, status: item?.status || "active" });
+  };
+
+  return (
+    <Modal title={`${item ? "แก้ไข" : "เพิ่ม"}อุปกรณ์`} onClose={onClose}>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ประเภท</label>
+        <select style={inpStyle} value={category} onChange={e => setCategory(e.target.value)}>
+          <option value="ios">เครื่องสแกนช่องปาก (IOS)</option>
+          <option value="dongle">ดองเกิลโปรแกรม</option>
+        </select>
+      </div>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ชื่ออุปกรณ์ / โปรแกรม</label>
+        <input style={inpStyle} value={name} onChange={e => setName(e.target.value)} placeholder={category === "ios" ? "เช่น iTero Element 5D" : "เช่น Exocad DentalCAD"} />
+      </div>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ยี่ห้อ</label>
+        <input style={inpStyle} value={brand} onChange={e => setBrand(e.target.value)} />
+      </div>
+      {category === "dongle" && (
+        <div style={{ marginBottom:14 }}>
+          <label style={lblStyle}>หมวดหมู่โปรแกรม</label>
+          <select style={inpStyle} value={subtype} onChange={e => setSubtype(e.target.value)}>
+            <option value="">— เลือก —</option>
+            <option value="CAD">CAD</option>
+            <option value="Implant Planning">วางแผนรากฟันเทียม (Implant Planning)</option>
+          </select>
+        </div>
+      )}
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>หมายเลขเครื่อง / Serial Number</label>
+        <input style={inpStyle} value={serialNumber} onChange={e => setSN(e.target.value)} />
+      </div>
+      {err && <p style={{ margin:"0 0 10px", color:C.red, fontSize:13 }}>{err}</p>}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+        <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
+        <button style={btnStyle("primary")} onClick={save}>บันทึก</button>
+      </div>
+    </Modal>
+  );
+}
+
+function AdminEquipmentPage({ equipment, setEquipment, notify }) {
+  const [modal, setModal]           = useState(null); // { item }
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const save = async (data) => {
+    const prev = [...equipment];
+    const isEdit = !!data.id;
+    let target = { ...data };
+    if (isEdit) setEquipment(p => p.map(e => e.id === target.id ? target : e));
+    else {
+      target = { ...target, id: `EQ-${Date.now()}` };
+      setEquipment(p => [...p, target]);
+    }
+    notify(`${isEdit ? "อัปเดต" : "เพิ่ม"}อุปกรณ์ (กำลังบันทึกพื้นหลัง)`);
+    setModal(null);
+    try {
+      if (isEdit) await SheetsDB.updateEquipment(target);
+      else        await SheetsDB.appendEquipment(target);
+      notify("✓ บันทึกอุปกรณ์ลงฐานข้อมูลเสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ บันทึกไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
+    }
+  };
+
+  const toggleStatus = async (item) => {
+    const newStatus = item.status === "active" ? "maintenance" : "active";
+    const prev = [...equipment];
+    setEquipment(p => p.map(e => e.id === item.id ? { ...e, status: newStatus } : e));
+    notify("อัปเดตสถานะอุปกรณ์ (กำลังบันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.saveEquipmentStatus(item.id, newStatus);
+      notify("✓ อัปเดตสถานะเสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ อัปเดตไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
+  const remove = async (id) => {
+    const prev = [...equipment];
+    setEquipment(p => p.filter(e => e.id !== id));
+    notify("ลบอุปกรณ์ (กำลังบันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.saveEquipmentStatus(id, "removed");
+      notify("✓ ลบอุปกรณ์เสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom:28, display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จัดการอุปกรณ์</h2>
+          <p style={{ margin:0, color:C.muted, fontSize:14 }}>เครื่องสแกนช่องปาก (IOS) และดองเกิลโปรแกรม</p>
+        </div>
+        <button style={btnStyle("primary")} onClick={() => setModal({ item: null })}>+ เพิ่มอุปกรณ์</button>
+      </div>
+
+      {["ios", "dongle"].map(cat => (
+        <div key={cat} style={{ marginBottom:26 }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:C.muted, textTransform:"uppercase", marginBottom:12 }}>{EQUIP_CATEGORY_LABELS[cat]}</h3>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
+            {equipment.filter(e => e.category === cat).map(item => (
+              <div key={item.id} style={{ ...cardStyle, padding:"14px 16px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                  <span style={{ fontWeight:600, fontSize:14 }}>{item.name}</span>
+                  <Badge t={item.status === "active" ? "active" : "maintenance"}>{item.status === "active" ? "ใช้งาน" : "ซ่อมบำรุง"}</Badge>
+                </div>
+                <p style={{ margin:0, fontSize:12, color:C.muted }}>{item.brand}{item.subtype ? ` · ${EQUIP_SUBTYPE_LABELS[item.subtype] || item.subtype}` : ""}</p>
+                <p style={{ margin:"2px 0 10px", fontSize:11.5, color:C.faint }}>S/N {item.serialNumber || "—"}</p>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button style={{ ...btnStyle("ghost"), padding:"5px 10px", fontSize:11.5 }} onClick={() => setModal({ item })}>แก้ไข</button>
+                  <button style={{ ...btnStyle("amber"), padding:"5px 10px", fontSize:11.5 }} onClick={() => toggleStatus(item)}>{item.status === "active" ? "ปิดซ่อม" : "เปิดใช้"}</button>
+                  <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:11.5 }} onClick={() => setConfirmDel(item)}>ลบ</button>
+                </div>
+              </div>
+            ))}
+            {equipment.filter(e => e.category === cat).length === 0 && (
+              <p style={{ color:C.faint, fontSize:13 }}>ยังไม่มีอุปกรณ์ในหมวดนี้</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {modal && <EquipmentFormModal item={modal.item} onSave={save} onClose={() => setModal(null)} />}
+
+      {confirmDel && (
+        <Modal title="ยืนยันการลบ" onClose={() => setConfirmDel(null)}>
+          <p style={{ margin:"0 0 20px", fontSize:14 }}>ต้องการลบ <strong>{confirmDel.name}</strong> ใช่หรือไม่?</p>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <button style={btnStyle("ghost")} onClick={() => setConfirmDel(null)}>ยกเลิก</button>
+            <button style={btnStyle("danger")} onClick={() => { remove(confirmDel.id); setConfirmDel(null); }}>ยืนยันลบ</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ═══ ADMIN — EQUIPMENT RESERVATIONS ═════════════════════════════════════════════ */
+function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCancel }) {
+  const [tab, setTab] = useState("upcoming");
+  const filtered = equipmentReservations.filter(r => {
+    if (tab === "upcoming")  return r.date >= todayStr && r.status !== "cancelled";
+    if (tab === "past")      return r.date < todayStr;
+    if (tab === "cancelled") return r.status === "cancelled";
+    return true;
+  });
+
+  return (
+    <div>
+      <div style={{ marginBottom:28 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>การจองอุปกรณ์</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>IOS และดองเกิลทั้งหมด · {equipmentReservations.length} รายการ</p>
+      </div>
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {[["upcoming", "รอดำเนินการ"], ["past", "ผ่านมาแล้ว"], ["cancelled", "ยกเลิก"], ["all", "ทั้งหมด"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...btnStyle(tab === k ? "primary" : "ghost"), fontSize:13 }}>{l}</button>
+        ))}
+      </div>
+      <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+          <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+            {["วันที่", "ช่วงเวลา", "อุปกรณ์", "นิสิต", "วัตถุประสงค์", "HN/เคส", "สถานะ", ""].map(h => (
+              <th key={h} style={{ textAlign:"left", padding:"10px 14px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase" }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={8} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
+            ) : filtered.sort((a, b) => b.date.localeCompare(a.date)).map(r => {
+              const eq = equipment.find(e => e.id === r.equipmentId);
+              return (
+                <tr key={r.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"9px 14px" }}>{displayDate(r.date)}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.timeSlot}</td>
+                  <td style={{ padding:"9px 14px", fontWeight:600 }}>{eq?.name || r.equipmentId}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.studentName}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.purpose}</td>
+                  <td style={{ padding:"9px 14px", color:C.muted }}>{r.caseHn || "—"}</td>
+                  <td style={{ padding:"9px 14px" }}><Badge t={r.status}>{r.status === "cancelled" ? "ยกเลิก" : "ยืนยันแล้ว"}</Badge></td>
+                  <td style={{ padding:"9px 14px" }}>
+                    {r.status !== "cancelled" && r.date >= todayStr &&
+                      <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.id)}>ยกเลิก</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 /* ═══ DAY SUMMARY PANEL (student view-only) ═══════════════════════════════════════
    Shows a compact, always-visible table of all bookings for the selected date+session.
    No clicks required — replaces the "click unit to see info" pattern.               */
@@ -2995,11 +3356,11 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
 function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword }) {
   const [showPwModal, setShowPwModal] = useState(false);
   const nav = user.role==="student"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
+   const nav = user.role==="student"
+    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"equip-browse",i:"🔬",l:"จองอุปกรณ์"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
     : user.role==="advisor"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"my-res",i:"📋",l:"การจอง"}]
-    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"},{k:"admin-summary",i:"📊",l:"สรุปรายนิสิต"}];
-  return (
+    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"equip-browse",i:"🔬",l:"จองอุปกรณ์"},{k:"my-res",i:"📋",l:"การจอง"}]
+    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-equipment",i:"🔬",l:"จัดการอุปกรณ์"},{k:"admin-equip-res",i:"📋",l:"การจองอุปกรณ์"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"},{k:"admin-summary",i:"📊",l:"สรุปรายนิสิต"}];
     <aside style={{ width:235, background:C.ink, minHeight:"100vh", display:"flex", flexDirection:"column", flexShrink:0 }}>
       <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -3060,6 +3421,8 @@ export default function App() {
   const [reservations, setReservations]   = useState([]);
   const [sessionAdvisors, setSessAdvs]    = useState(()=>buildSessionAdvisors(SEED_ADVISORS, {}));
   const [monthlyLineups, setMonthlyLineups] = useState({});
+  const [equipment, setEquipment]                     = useState(SEED_EQUIPMENT);
+  const [equipmentReservations, setEquipmentReservations] = useState([]);
   const [toast, setToast]                 = useState(null);
   // Prevents duplicate concurrent syncAll calls (which cause GAS LockService to block for 30s)
   const syncInFlight = useRef(false);
@@ -3111,7 +3474,8 @@ export default function App() {
     });
 
     setUnits(finalUnits);
-
+setEquipment(data.equipment && data.equipment.length ? data.equipment : SEED_EQUIPMENT);
+    setEquipmentReservations(data.equipmentReservations || []);
     // ... rest of the function (auto-archive, etc.)
 
       // ── Auto-archive reservations older than 18 months ────────────────────
@@ -3230,7 +3594,35 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
       notify(`⚠ ยกเลิกไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
     }
   };
+const bookEquipment = async ({ equipment: eq, date, timeSlot, purpose, caseHn }) => {
+    const newRes = {
+      id: generateId("equipmentReservation", equipmentReservations),
+      studentId: user.id, studentName: user.name,
+      equipmentId: eq.id, date, timeSlot, purpose, caseHn: caseHn || "",
+      status: "confirmed", createdAt: todayStr,
+    };
+    setEquipmentReservations(p => [...p, newRes]);
+    notify(`จอง ${eq.name} สำเร็จ — ${displayDate(date)} ${timeSlot}`);
+    try {
+      await SheetsDB.writeEquipmentReservation(newRes);
+      notify(`✓ บันทึกการจอง ${eq.name} ลงฐานข้อมูลเสร็จสมบูรณ์`);
+    } catch (error) {
+      setEquipmentReservations(p => p.filter(r => r.id !== newRes.id));
+      notify(`⚠ การเชื่อมต่อขัดข้อง! ยกเลิกการจอง ${eq.name} แล้ว: ${error.message}`, true);
+    }
+  };
 
+  const cancelEquipmentBooking = async (id) => {
+    const prev = [...equipmentReservations];
+    setEquipmentReservations(p => p.map(r => r.id === id ? { ...r, status: "cancelled" } : r));
+    notify("ยกเลิกการจองอุปกรณ์เรียบร้อยแล้ว");
+    try {
+      await SheetsDB.updateEquipmentReservationStatus(id, "cancelled");
+    } catch (error) {
+      setEquipmentReservations(prev);
+      notify(`⚠ ยกเลิกไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
   const updateStatus = async (id, status) => { 
     const previousState = [...reservations];
     setReservations(p=>p.map(r=>r.id===id?{...r,status}:r)); 
@@ -3284,6 +3676,9 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
         {page==="overview"          && <BrowsePage reservations={reservations} user={{...user, role:"overview"}} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} onBook={book} />}
         {page==="my-res"            && <MyReservationsPage reservations={reservations} user={user} units={units} sessionAdvisors={sessionAdvisors} advisors={advisors} onCancel={cancel} onEdit={editReservation} />}
         {page==="admin-overview"    && <AdminOverview reservations={reservations} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} />}
+        {page==="equip-browse"     && <EquipmentBrowsePage equipment={equipment} equipmentReservations={equipmentReservations} user={user} onBook={bookEquipment} />}
+        {page==="admin-equipment"  && <AdminEquipmentPage equipment={equipment} setEquipment={setEquipment} notify={notify} />}
+        {page==="admin-equip-res"  && <AdminEquipmentReservationsPage equipmentReservations={equipmentReservations} equipment={equipment} onCancel={cancelEquipmentBooking} />}
         {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} monthlyLineups={monthlyLineups} notify={notify} />}
         {page==="admin-monthly-lineup"   &&
           <AdminMonthlyLineupPage
