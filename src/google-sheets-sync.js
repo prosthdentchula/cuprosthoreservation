@@ -211,7 +211,6 @@ async syncAll() {
     ];
     return apiAppend("Reservations!A:O", [row]);
   },
-};
 
   async updateReservationFields(reservationId, { patientName, hn, treatment }) {
     const rows = await apiGet("Reservations!A:A");
