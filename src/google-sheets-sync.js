@@ -299,6 +299,14 @@ async syncAll() {
     return apiAppend("Advisors!A:G", [row]);
   },
 
+  async batchDeactivateUsers(studentIds, advisorIds) {
+    return gasPost({ action: "batchDeactivateUsers", studentIds, advisorIds });
+  },
+
+  async batchUpdateStatus(sheetName, ids, statusColIdx, newValue) {
+    return gasPost({ action: "batchUpdateStatus", sheetName, ids, statusColIdx, newValue });
+  },
+
   async updateStudent(student) {
     const rows = await apiGet("Students!A:A");
     const rowIdx = rows.findIndex((r) => r[0] === student.id);
