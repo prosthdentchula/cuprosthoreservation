@@ -883,7 +883,7 @@ function AdminEquipmentPage({ equipment, setEquipment, notify }) {
 }
 
 /* ═══ ADMIN — EQUIPMENT RESERVATIONS ═════════════════════════════════════════════ */
-function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCancel }) {
+function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCancel, onUpdateStatus }) {
   const [tab, setTab] = useState("upcoming");
   const filtered = equipmentReservations.filter(r => {
     if (tab === "upcoming")  return r.date >= todayStr && r.status !== "cancelled";
@@ -923,10 +923,16 @@ function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCa
                   <td style={{ padding:"9px 14px" }}>{r.studentName}</td>
                   <td style={{ padding:"9px 14px" }}>{r.purpose}</td>
                   <td style={{ padding:"9px 14px", color:C.muted }}>{r.caseHn || "—"}</td>
-                  <td style={{ padding:"9px 14px" }}><Badge t={r.status}>{r.status === "cancelled" ? "ยกเลิก" : "ยืนยันแล้ว"}</Badge></td>
+                  <td style={{ padding:"9px 14px" }}><Badge t={r.status}>{r.status === "cancelled" ? "ยกเลิก" : r.status === "returned" ? "รับคืนแล้ว" : "จอง/ใช้งาน"}</Badge></td>
                   <td style={{ padding:"9px 14px" }}>
-                    {r.status !== "cancelled" && r.date >= todayStr &&
-                      <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.id)}>ยกเลิก</button>}
+                    <div style={{ display:"flex", gap:4 }}>
+                      {r.status === "confirmed" && (
+                        <button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={() => onUpdateStatus(r.id, "returned")}>รับคืน</button>
+                      )}
+                      {r.status !== "cancelled" && (
+                        <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.id)}>ยกเลิก</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -3395,14 +3401,17 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
       ]
     : [
         { k: "admin-overview", i: "◎", l: "ภาพรวม" },
-        { k: "admin-session-advisors", i: "👨‍⚕️", l: "อาจารย์นิเทศ" },
-        { k: "admin-monthly-lineup", i: "📅", l: "ตารางเวร" },
-        { k: "admin-users", i: "👥", l: "จัดการผู้ใช้" },
+        { k: "admin-summary", i: "📊", l: "สรุปรายนิสิต" },
+        { isHeader: true, l: "ยูนิต (Units)" },
         { k: "admin-units", i: "⊞", l: "จัดการยูนิต" },
+        { k: "admin-res", i: "📋", l: "การจองยูนิต" },
+        { isHeader: true, l: "อุปกรณ์ (Equipment)" },
         { k: "admin-equipment", i: "🔬", l: "จัดการอุปกรณ์" },
         { k: "admin-equip-res", i: "📋", l: "การจองอุปกรณ์" },
-        { k: "admin-res", i: "📋", l: "การจองทั้งหมด" },
-        { k: "admin-summary", i: "📊", l: "สรุปรายนิสิต" }
+        { isHeader: true, l: "ระบบและบุคลากร" },
+        { k: "admin-session-advisors", i: "👨‍⚕️", l: "อาจารย์นิเทศ" },
+        { k: "admin-monthly-lineup", i: "📅", l: "ตารางเวร" },
+        { k: "admin-users", i: "👥", l: "จัดการผู้ใช้" }
       ];
 
   return (
@@ -3449,40 +3458,46 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
         </p>
       </div>
 
-      <nav style={{ padding: "14px 10px", flex: 1 }}>
-        {nav.map(x => (
-          <button
-            key={x.k}
-            onClick={() => setPage(x.k)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              width: "100%",
-              padding: "9px 12px",
-              borderRadius: 8,
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "'Sarabun','Outfit',sans-serif",
-              fontSize: 13.5,
-              fontWeight: page === x.k ? 500 : 400,
-              background:
-                page === x.k
-                  ? "rgba(255,255,255,0.1)"
-                  : "transparent",
-              color:
-                page === x.k
-                  ? "#fff"
-                  : "rgba(255,255,255,0.4)",
-              transition: "all .15s",
-              marginBottom: 2,
-              textAlign: "left"
-            }}
-          >
-            <span style={{ fontSize: 14 }}>{x.i}</span>
-            {x.l}
-          </button>
-        ))}
+      <nav style={{ padding: "14px 10px", flex: 1, overflowY: "auto" }}>
+        {nav.map((x, idx) => 
+          x.isHeader ? (
+            <div key={`header-${idx}`} style={{ padding: "18px 12px 6px", fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500 }}>
+              {x.l}
+            </div>
+          ) : (
+            <button
+              key={x.k}
+              onClick={() => setPage(x.k)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "9px 12px",
+                borderRadius: 8,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "'Sarabun','Outfit',sans-serif",
+                fontSize: 13.5,
+                fontWeight: page === x.k ? 500 : 400,
+                background:
+                  page === x.k
+                    ? "rgba(255,255,255,0.1)"
+                    : "transparent",
+                color:
+                  page === x.k
+                    ? "#fff"
+                    : "rgba(255,255,255,0.4)",
+                transition: "all .15s",
+                marginBottom: 2,
+                textAlign: "left"
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{x.i}</span>
+              {x.l}
+            </button>
+          )
+        )}
       </nav>
 
       <div
@@ -3822,6 +3837,19 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
       notify(`⚠ ยกเลิกไม่สำเร็จ: ${error.message}`, true);
     }
   };
+
+  const updateEquipmentResStatus = async (id, status) => {
+    const prev = [...equipmentReservations];
+    setEquipmentReservations(p => p.map(r => r.id === id ? { ...r, status } : r));
+    const label = status === "returned" ? "รับคืนอุปกรณ์" : "อัปเดตสถานะ";
+    notify(`${label}เรียบร้อยแล้ว`);
+    try {
+      await SheetsDB.updateEquipmentReservationStatus(id, status);
+    } catch (error) {
+      setEquipmentReservations(prev);
+      notify(`⚠ ทำรายการไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
   const updateStatus = async (id, status) => { 
     const previousState = [...reservations];
     setReservations(p=>p.map(r=>r.id===id?{...r,status}:r)); 
@@ -3877,7 +3905,7 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
         {page==="admin-overview"    && <AdminOverview reservations={reservations} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} />}
         {page==="equip-browse"     && <EquipmentBrowsePage equipment={equipment} equipmentReservations={equipmentReservations} user={user} onBook={bookEquipment} />}
         {page==="admin-equipment"  && <AdminEquipmentPage equipment={equipment} setEquipment={setEquipment} notify={notify} />}
-        {page==="admin-equip-res"  && <AdminEquipmentReservationsPage equipmentReservations={equipmentReservations} equipment={equipment} onCancel={cancelEquipmentBooking} />}
+        {page==="admin-equip-res"  && <AdminEquipmentReservationsPage equipmentReservations={equipmentReservations} equipment={equipment} onCancel={cancelEquipmentBooking} onUpdateStatus={updateEquipmentResStatus} />}
         {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} monthlyLineups={monthlyLineups} notify={notify} />}
         {page==="admin-monthly-lineup"   &&
           <AdminMonthlyLineupPage
