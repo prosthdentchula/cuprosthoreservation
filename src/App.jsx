@@ -782,6 +782,41 @@ function EquipmentFormModal({ item, onSave, onClose }) {
 function AdminEquipmentPage({ equipment, setEquipment, notify }) {
   const [modal, setModal]           = useState(null); // { item }
   const [confirmDel, setConfirmDel] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (items) => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`ยืนยันการลบ ${selectedIds.size} รายการที่เลือก?`)) return;
+
+    const ids = Array.from(selectedIds);
+    const prev = [...equipment];
+    setEquipment(p => p.filter(e => !ids.includes(e.id)));
+    notify("กำลังลบอุปกรณ์ที่เลือก (บันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.batchUpdateStatus("Equipment", ids, 7, "removed");
+      notify(`✓ ลบอุปกรณ์ ${ids.length} รายการเสร็จสมบูรณ์`);
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+    }
+    setSelectedIds(new Set());
+  };
 
   const save = async (data) => {
     const prev = [...equipment];
@@ -838,7 +873,15 @@ function AdminEquipmentPage({ equipment, setEquipment, notify }) {
           <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จัดการอุปกรณ์</h2>
           <p style={{ margin:0, color:C.muted, fontSize:14 }}>เครื่องสแกนช่องปาก (IOS) และดองเกิลโปรแกรม</p>
         </div>
-        <button style={btnStyle("primary")} onClick={() => setModal({ item: null })}>+ เพิ่มอุปกรณ์</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <button style={{ ...btnStyle("danger") }} onClick={handleBulkDelete}>ลบที่เลือก ({selectedIds.size})</button>
+          )}
+          <button style={{ ...btnStyle("ghost") }} onClick={() => toggleSelectAll(equipment)}>
+            {selectedIds.size === equipment.length && equipment.length > 0 ? "ยกเลิกการเลือก" : "เลือกทั้งหมด"}
+          </button>
+          <button style={btnStyle("primary")} onClick={() => setModal({ item: null })}>+ เพิ่มอุปกรณ์</button>
+        </div>
       </div>
 
       {["ios", "dongle"].map(cat => (
@@ -846,9 +889,12 @@ function AdminEquipmentPage({ equipment, setEquipment, notify }) {
           <h3 style={{ fontSize:14, fontWeight:600, color:C.muted, textTransform:"uppercase", marginBottom:12 }}>{EQUIP_CATEGORY_LABELS[cat]}</h3>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
             {equipment.filter(e => e.category === cat).map(item => (
-              <div key={item.id} style={{ ...cardStyle, padding:"14px 16px" }}>
+              <div key={item.id} style={{ ...cardStyle, padding:"14px 16px", outline: selectedIds.has(item.id) ? `2px solid ${C.primary}` : "none" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-                  <span style={{ fontWeight:600, fontSize:14 }}>{item.name}</span>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} />
+                    <span style={{ fontWeight:600, fontSize:14 }}>{item.name}</span>
+                  </div>
                   <Badge t={item.status === "active" ? "active" : "maintenance"}>{item.status === "active" ? "ใช้งาน" : "ซ่อมบำรุง"}</Badge>
                 </div>
                 <p style={{ margin:0, fontSize:12, color:C.muted }}>{item.brand}{item.subtype ? ` · ${EQUIP_SUBTYPE_LABELS[item.subtype] || item.subtype}` : ""}</p>
@@ -2208,6 +2254,54 @@ function AdminManageUsersPage({ students, setStudents, advisors, setAdvisors, no
   const [confirmDelete, setConfirmDelete] = useState(null); // {type:"student"|"advisor", id, name}
   const [sortCol,  setSortCol]  = useState("id");
   const [sortAsc,  setSortAsc]  = useState(true);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (items) => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`ยืนยันการลบ ${selectedIds.size} รายการที่เลือก?`)) return;
+
+    const ids = Array.from(selectedIds);
+    if (tab === "students") {
+      const prevStudents = [...students];
+      setStudents(p => p.filter(s => !ids.includes(s.id)));
+      notify("กำลังลบนิสิตที่เลือก (บันทึกพื้นหลัง)");
+      try {
+        await SheetsDB.batchDeactivateUsers(ids, []);
+        notify(`✓ ลบนิสิต ${ids.length} รายการเสร็จสมบูรณ์`);
+      } catch (error) {
+        setStudents(prevStudents);
+        notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+      }
+    } else {
+      const prevAdvisors = [...advisors];
+      setAdvisors(p => p.filter(a => !ids.includes(a.id)));
+      notify("กำลังลบอาจารย์ที่เลือก (บันทึกพื้นหลัง)");
+      try {
+        await SheetsDB.batchDeactivateUsers([], ids);
+        notify(`✓ ลบอาจารย์ ${ids.length} รายการเสร็จสมบูรณ์`);
+      } catch (error) {
+        setAdvisors(prevAdvisors);
+        notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+      }
+    }
+    setSelectedIds(new Set());
+  };
 
   function toggleSort(col) {
     if (sortCol === col) setSortAsc(a => !a);
@@ -2346,8 +2440,13 @@ try {
       </div>
       <div style={{ display:"flex", gap:8, marginBottom:20 }}>
         {[["students",`นิสิต (${students.length} คน)`],["advisors",`อาจารย์ (${advisors.length} คน)`]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)} style={{ ...btnStyle(tab===k?"primary":"ghost"), fontSize:13 }}>{l}</button>
+          <button key={k} onClick={()=>{ setTab(k); setSelectedIds(new Set()); }} style={{ ...btnStyle(tab===k?"primary":"ghost"), fontSize:13 }}>{l}</button>
         ))}
+        {selectedIds.size > 0 && (
+          <button style={{ ...btnStyle("danger"), marginLeft:16, fontSize:13 }} onClick={handleBulkDelete}>
+            ลบที่เลือก ({selectedIds.size})
+          </button>
+        )}
         <button style={{ ...btnStyle("ghost"), marginLeft:"auto", fontSize:13 }} onClick={()=>setModal({type:tab==="students"?"student":"advisor",item:null})}>
           + เพิ่ม {tab==="students"?"นิสิต":"อาจารย์"}
         </button>
@@ -2357,6 +2456,9 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+              <th style={{ padding:"10px 16px", width:30 }}>
+                <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === sortedStudents.length} onChange={() => toggleSelectAll(sortedStudents)} />
+              </th>
               {studentCols.map(h=>(
                 <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
                   {h.l}
@@ -2367,6 +2469,9 @@ try {
             <tbody>
               {sortedStudents.map(s=>(
                 <tr key={s.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"11px 16px" }}>
+                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} />
+                  </td>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{s.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{s.name}</td>
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{s.username}</td>
@@ -2409,6 +2514,9 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+              <th style={{ padding:"10px 16px", width:30 }}>
+                <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === sortedAdvisors.length} onChange={() => toggleSelectAll(sortedAdvisors)} />
+              </th>
               {advisorCols.map(h=>(
                 <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
                   {h.l}
@@ -2419,6 +2527,9 @@ try {
             <tbody>
               {sortedAdvisors.map(a=>(
                 <tr key={a.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"11px 16px" }}>
+                    <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} />
+                  </td>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{a.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{a.name}</td>
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{a.username}</td>
