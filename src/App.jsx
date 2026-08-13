@@ -583,15 +583,20 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
 }
 
 /* ═══ EQUIPMENT BOOKING MODAL ═════════════════════════════════════════════════ */
-function EquipmentBookingModal({ equipment, date, timeSlot, onConfirm, onClose }) {
+function EquipmentBookingModal({ equipment, date, timeSlot, maxDuration = 1, onConfirm, onClose }) {
   const [purpose, setPurpose] = useState("");
   const [caseHn, setCaseHn]   = useState("");
+  const [duration, setDuration] = useState(1);
   const [err, setErr]         = useState("");
 
   const submit = () => {
     if (!purpose.trim()) return setErr("กรุณากรอกวัตถุประสงค์การใช้งาน");
-    onConfirm({ purpose, caseHn });
+    onConfirm({ purpose, caseHn, duration });
   };
+
+  const startHour = parseInt(timeSlot.split(":")[0], 10);
+  const endHour = startHour + duration;
+  const displayTime = `${String(startHour).padStart(2,"0")}:00-${String(endHour).padStart(2,"0")}:00`;
 
   return (
     <Modal title={`จอง ${equipment.name}`} onClose={onClose}>
@@ -601,12 +606,20 @@ function EquipmentBookingModal({ equipment, date, timeSlot, onConfirm, onClose }
           ["ประเภท", EQUIP_CATEGORY_LABELS[equipment.category]],
           equipment.subtype ? ["หมวดหมู่", EQUIP_SUBTYPE_LABELS[equipment.subtype] || equipment.subtype] : null,
           ["วันที่", displayDate(date)],
-          ["ช่วงเวลา", timeSlot],
+          ["ช่วงเวลา", displayTime],
         ].filter(Boolean).map(([k, v]) => (
           <div key={k}><span style={{ ...lblStyle, marginBottom:2 }}>{k}</span><span style={{ fontSize:13.5, fontWeight:500 }}>{v}</span></div>
         ))}
       </div>
       <div style={{ display:"grid", gap:14 }}>
+        <div>
+          <label style={lblStyle}>ระยะเวลา (ชั่วโมง)</label>
+          <select style={{ ...inpStyle, width:"100%" }} value={duration} onChange={e => setDuration(Number(e.target.value))}>
+            {Array.from({length: maxDuration}, (_, i) => i + 1).map(d => (
+              <option key={d} value={d}>{d} ชั่วโมง</option>
+            ))}
+          </select>
+        </div>
         <div>
           <label style={lblStyle}>วัตถุประสงค์การใช้งาน *</label>
           <input style={inpStyle} value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="เช่น สแกนเพื่อทำ Crown, วางแผนรากฟันเทียม" />
@@ -691,11 +704,22 @@ function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook })
         </div>
       ))}
 
-      {target && (
-        <EquipmentBookingModal equipment={target.item} date={date} timeSlot={target.slot}
-          onClose={() => setTarget(null)}
-          onConfirm={(data) => { onBook({ equipment: target.item, date, timeSlot: target.slot, ...data }); setTarget(null); }} />
-      )}
+      {target && (() => {
+        const startIndex = EQUIP_TIME_SLOTS.indexOf(target.slot);
+        let maxDuration = 1;
+        for (let i = 1; i < 3; i++) {
+          if (startIndex + i >= EQUIP_TIME_SLOTS.length) break;
+          const nextSlot = EQUIP_TIME_SLOTS[startIndex + i];
+          if (bookingFor(target.item.id, nextSlot)) break;
+          maxDuration++;
+        }
+
+        return (
+          <EquipmentBookingModal equipment={target.item} date={date} timeSlot={target.slot} maxDuration={maxDuration}
+            onClose={() => setTarget(null)}
+            onConfirm={(data) => { onBook({ equipment: target.item, date, timeSlot: target.slot, duration: data.duration, ...data }); setTarget(null); }} />
+        );
+      })()}
     </div>
   );
 }
@@ -3752,20 +3776,37 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
       notify(`⚠ ยกเลิกไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
     }
   };
-const bookEquipment = async ({ equipment: eq, date, timeSlot, purpose, caseHn }) => {
-    const newRes = {
-      id: generateId("equipmentReservation", equipmentReservations),
-      studentId: user.id, studentName: user.name,
-      equipmentId: eq.id, date, timeSlot, purpose, caseHn: caseHn || "",
-      status: "confirmed", createdAt: todayStr,
-    };
-    setEquipmentReservations(p => [...p, newRes]);
-    notify(`จอง ${eq.name} สำเร็จ — ${displayDate(date)} ${timeSlot}`);
+const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purpose, caseHn }) => {
+    const startIndex = EQUIP_TIME_SLOTS.indexOf(timeSlot);
+    const slotsToBook = [];
+    for(let i = 0; i < duration; i++) {
+        slotsToBook.push(EQUIP_TIME_SLOTS[startIndex + i]);
+    }
+
+    let currentRes = [...equipmentReservations];
+    const newReservations = [];
+    for(const slot of slotsToBook) {
+        const id = generateId("equipmentReservation", currentRes);
+        const res = {
+          id,
+          studentId: user.id, studentName: user.name,
+          equipmentId: eq.id, date, timeSlot: slot, purpose, caseHn: caseHn || "",
+          status: "confirmed", createdAt: todayStr,
+        };
+        newReservations.push(res);
+        currentRes.push(res);
+    }
+
+    setEquipmentReservations(currentRes);
+    notify(`จอง ${eq.name} สำเร็จ ${duration} ชั่วโมง — ${displayDate(date)}`);
+    
     try {
-      await SheetsDB.writeEquipmentReservation(newRes);
+      for(const res of newReservations) {
+        await SheetsDB.writeEquipmentReservation(res);
+      }
       notify(`✓ บันทึกการจอง ${eq.name} ลงฐานข้อมูลเสร็จสมบูรณ์`);
     } catch (error) {
-      setEquipmentReservations(p => p.filter(r => r.id !== newRes.id));
+      setEquipmentReservations(p => p.filter(r => !newReservations.find(nr => nr.id === r.id)));
       notify(`⚠ การเชื่อมต่อขัดข้อง! ยกเลิกการจอง ${eq.name} แล้ว: ${error.message}`, true);
     }
   };
