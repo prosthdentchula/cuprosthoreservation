@@ -3167,7 +3167,15 @@ export default function App() {
     // causing the second one to wait 30s on LockService — the main cause of slow load.
   };
 
+const bookingInFlight = useRef(false);
+
 const book = async ({ unit, date, session, patientName, hn, treatment, overbooked, isGhost, inheritUnit }) => {
+  if (bookingInFlight.current) {
+    notify("⏳ การจองกำลังดำเนินการ กรุณารอสักครู่", true);
+    return;
+  }
+  bookingInFlight.current = true;
+  try {
     const newRes = {
       id: generateId("reservation", reservations), studentId:user.id, studentName:user.name,
       unitId:unit.id, date, session, patientName, hn, treatment,
@@ -3184,7 +3192,10 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
       setReservations(p=>p.filter(r=>r.id!==newRes.id));
       notify(`⚠ การเชื่อมต่อขัดข้อง! ยกเลิกการจองยูนิต ${unit.name} แล้ว: ${error.message}`, true);
     }
-  };
+  } finally {
+    bookingInFlight.current = false;
+  }
+};
 
   const adminBook = async ({ unit, student, date, session, patientName, hn, treatment, overbooked }) => {
     const newRes = {

@@ -188,7 +188,19 @@ async syncAll() {
   throw lastErr;
 },
 
-async writeReservation(res) {
+  async writeReservation(res) {
+    // Check if this reservation ID already exists before writing
+    try {
+      const rows = await apiGet("Reservations!A:A");
+      if (rows.some(r => r[0] === res.id)) {
+        console.warn(`Reservation ${res.id} already exists, skipping duplicate write`);
+        return { success: true, message: "Already written" };
+      }
+    } catch (err) {
+      console.warn("Could not check for duplicate, proceeding with write:", err);
+      // Fall through and write anyway on error
+    }
+
     const row = [
       res.id, res.studentId, res.studentName, String(res.unitId),
       res.date, res.session, res.patientName, res.hn, res.treatment,
