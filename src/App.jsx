@@ -3175,14 +3175,16 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
     return;
   }
   bookingInFlight.current = true;
-  
   try {
     const newRes = {
-      id: generateId("reservation", reservations), 
-      // ... rest of reservation object ...
+      id: generateId("reservation", reservations), studentId:user.id, studentName:user.name,
+      unitId:unit.id, date, session, patientName, hn, treatment,
+      status:"confirmed", createdAt:todayStr, overbooked, isGhost: !!isGhost, inheritUnit: !!inheritUnit
     };
     setReservations(p=>[...p, newRes]);
-    // ... notify ...
+    if (isGhost) notify(`👻 จองในฐานะ "ผี" — ยูนิต ${unit.name} — แจ้งผู้ดูแลระบบแล้ว`, true);
+    else if (overbooked) notify(`⚠ Overbook: ยูนิต ${unit.name} — กำลังบันทึกพื้นหลัง`, true);
+    else notify(`จองยูนิต ${unit.name} สำเร็จ — ${displayDate(date)} ${session==="morning"?"ช่วงเช้า":"ช่วงบ่าย"}`);
     try {
       await SheetsDB.writeReservation(newRes);
       notify(`✓ บันทึกการจองยูนิต ${unit.name} ลงฐานข้อมูลเสร็จสมบูรณ์`);
