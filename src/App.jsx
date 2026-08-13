@@ -892,6 +892,27 @@ function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCa
     return true;
   });
 
+  const groupedReservations = [];
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    if (a.equipmentId !== b.equipmentId) return a.equipmentId.localeCompare(b.equipmentId);
+    return a.timeSlot.localeCompare(b.timeSlot);
+  });
+
+  sorted.forEach(r => {
+    const last = groupedReservations[groupedReservations.length - 1];
+    if (last && last.date === r.date && last.equipmentId === r.equipmentId && last.studentName === r.studentName && last.status === r.status && last.purpose === r.purpose) {
+      const lastEndHour = last.timeSlot.split("-")[1];
+      const currentStartHour = r.timeSlot.split("-")[0];
+      if (lastEndHour === currentStartHour) {
+         last.timeSlot = last.timeSlot.split("-")[0] + "-" + r.timeSlot.split("-")[1];
+         last.ids.push(r.id);
+         return;
+      }
+    }
+    groupedReservations.push({ ...r, ids: [r.id] });
+  });
+
   return (
     <div>
       <div style={{ marginBottom:28 }}>
@@ -911,12 +932,12 @@ function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCa
             ))}
           </tr></thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {groupedReservations.length === 0 ? (
               <tr><td colSpan={8} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
-            ) : filtered.sort((a, b) => b.date.localeCompare(a.date)).map(r => {
+            ) : groupedReservations.sort((a, b) => b.date.localeCompare(a.date)).map(r => {
               const eq = equipment.find(e => e.id === r.equipmentId);
               return (
-                <tr key={r.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                <tr key={r.ids.join(',')} style={{ borderBottom:`1px solid ${C.line}` }}>
                   <td style={{ padding:"9px 14px" }}>{displayDate(r.date)}</td>
                   <td style={{ padding:"9px 14px" }}>{r.timeSlot}</td>
                   <td style={{ padding:"9px 14px", fontWeight:600 }}>{eq?.name || r.equipmentId}</td>
@@ -927,10 +948,10 @@ function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCa
                   <td style={{ padding:"9px 14px" }}>
                     <div style={{ display:"flex", gap:4 }}>
                       {r.status === "confirmed" && (
-                        <button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={() => onUpdateStatus(r.id, "returned")}>รับคืน</button>
+                        <button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={() => onUpdateStatus(r.ids, "returned")}>รับคืน</button>
                       )}
                       {r.status !== "cancelled" && (
-                        <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.id)}>ยกเลิก</button>
+                        <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.ids)}>ยกเลิก</button>
                       )}
                     </div>
                   </td>
@@ -2185,6 +2206,55 @@ function AdminManageUsersPage({ students, setStudents, advisors, setAdvisors, no
   const [tab, setTab]           = useState("students");
   const [modal, setModal]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // {type:"student"|"advisor", id, name}
+  const [sortCol,  setSortCol]  = useState("id");
+  const [sortAsc,  setSortAsc]  = useState(true);
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortAsc(a => !a);
+    else { setSortCol(col); setSortAsc(true); }
+  }
+
+  const SortIcon = ({ col }) => (
+    <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
+      {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
+    </span>
+  );
+
+  const sortedStudents = [...students].sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (!va) va = "";
+    if (!vb) vb = "";
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const sortedAdvisors = [...advisors].sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (!va) va = "";
+    if (!vb) vb = "";
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const studentCols = [
+    { k: "id", l: "ID" },
+    { k: "name", l: "ชื่อ" },
+    { k: "username", l: "ชื่อผู้ใช้" },
+    { k: "password", l: "รหัสผ่าน" },
+    { k: "program", l: "โปรแกรม" },
+    { k: "enrollYear", l: "ชั้นปี" },
+    { k: "", l: "" }
+  ];
+
+  const advisorCols = [
+    { k: "id", l: "ID" },
+    { k: "name", l: "ชื่อ" },
+    { k: "username", l: "ชื่อผู้ใช้" },
+    { k: "password", l: "รหัสผ่าน" },
+    { k: "defaultZone", l: "โซนหลัก" },
+    { k: "schedule", l: "ตารางประจำ" },
+    { k: "", l: "" }
+  ];
 
 const handleSave = async (data) => {
     const prevStudents = [...students];
@@ -2287,12 +2357,15 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โปรแกรม","ชั้นปี",""].map(h=>(
-                <th key={h} style={{ textAlign:"left", padding:"10px 16px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
+              {studentCols.map(h=>(
+                <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
+                  {h.l}
+                  {h.k && <SortIcon col={h.k} />}
+                </th>
               ))}
             </tr></thead>
             <tbody>
-              {students.map(s=>(
+              {sortedStudents.map(s=>(
                 <tr key={s.id} style={{ borderBottom:`1px solid ${C.line}` }}>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{s.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{s.name}</td>
@@ -2336,12 +2409,15 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โซนหลัก","ตารางประจำ",""].map(h=>(
-                <th key={h} style={{ textAlign:"left", padding:"10px 16px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
+              {advisorCols.map(h=>(
+                <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
+                  {h.l}
+                  {h.k && <SortIcon col={h.k} />}
+                </th>
               ))}
             </tr></thead>
             <tbody>
-              {advisors.map(a=>(
+              {sortedAdvisors.map(a=>(
                 <tr key={a.id} style={{ borderBottom:`1px solid ${C.line}` }}>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{a.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{a.name}</td>
@@ -3826,25 +3902,27 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
     }
   };
 
-  const cancelEquipmentBooking = async (id) => {
+  const cancelEquipmentBooking = async (idOrIds) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
     const prev = [...equipmentReservations];
-    setEquipmentReservations(p => p.map(r => r.id === id ? { ...r, status: "cancelled" } : r));
+    setEquipmentReservations(p => p.map(r => ids.includes(r.id) ? { ...r, status: "cancelled" } : r));
     notify("ยกเลิกการจองอุปกรณ์เรียบร้อยแล้ว");
     try {
-      await SheetsDB.updateEquipmentReservationStatus(id, "cancelled");
+      await Promise.all(ids.map(id => SheetsDB.updateEquipmentReservationStatus(id, "cancelled")));
     } catch (error) {
       setEquipmentReservations(prev);
       notify(`⚠ ยกเลิกไม่สำเร็จ: ${error.message}`, true);
     }
   };
 
-  const updateEquipmentResStatus = async (id, status) => {
+  const updateEquipmentResStatus = async (idOrIds, status) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
     const prev = [...equipmentReservations];
-    setEquipmentReservations(p => p.map(r => r.id === id ? { ...r, status } : r));
+    setEquipmentReservations(p => p.map(r => ids.includes(r.id) ? { ...r, status } : r));
     const label = status === "returned" ? "รับคืนอุปกรณ์" : "อัปเดตสถานะ";
     notify(`${label}เรียบร้อยแล้ว`);
     try {
-      await SheetsDB.updateEquipmentReservationStatus(id, status);
+      await Promise.all(ids.map(id => SheetsDB.updateEquipmentReservationStatus(id, status)));
     } catch (error) {
       setEquipmentReservations(prev);
       notify(`⚠ ทำรายการไม่สำเร็จ: ${error.message}`, true);
