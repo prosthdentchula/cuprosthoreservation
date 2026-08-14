@@ -256,6 +256,20 @@ export const SheetsDB = {
     if (error) throw error;
   },
 
+  async batchAppendStudents(studentsList) {
+    const records = studentsList.map(s => ({
+      id: s.id,
+      name: s.name,
+      username: s.username,
+      password: s.password,
+      program: s.program || "MSc",
+      enroll_year: s.enrollYear || null,
+      active: true
+    }));
+    const { error } = await supabase.from('students').insert(records);
+    if (error) throw error;
+  },
+
   async saveUnitStatus(unitId, newStatus) {
     const { error } = await supabase.from('units').update({ status: newStatus }).eq('id', unitId);
     if (error) throw error;

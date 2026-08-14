@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { SheetsDB, initGoogleAuth } from "./supabase-sync.js";
+import * as XLSX from "xlsx";
 
 const fontLink = document.createElement("link");
 fontLink.rel = "stylesheet";
@@ -2436,6 +2437,74 @@ try {
     }
   };
 
+  const fileInputRef = useRef(null);
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        
+        let maxIdNum = students.map(s => parseInt(s.id.replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
+        let nextId = maxIdNum.length ? Math.max(...maxIdNum) + 1 : 6001;
+        
+        const newStudents = [];
+        for (const row of json) {
+          if (!row["ชื่อ"] && !row["name"] && !row["Name"]) continue;
+          
+          let id = String(row["ID"] || row["id"] || "");
+          if (!id) {
+            id = `D${nextId}`;
+            nextId++;
+          }
+          
+          newStudents.push({
+            id: id.trim(),
+            name: row["ชื่อ"] || row["name"] || row["Name"] || "",
+            username: String(row["ชื่อผู้ใช้"] || row["username"] || row["Username"] || id),
+            password: String(row["รหัสผ่าน"] || row["password"] || row["Password"] || "1234"),
+            program: row["โปรแกรม"] || row["program"] || row["Program"] || "MSc",
+            enrollYear: Number(row["ชั้นปี"] || row["enrollYear"] || row["year"] || new Date().getFullYear()),
+            active: true
+          });
+        }
+        
+        if (newStudents.length === 0) {
+          notify("⚠ ไม่พบข้อมูลนิสิตในไฟล์ หรือรูปแบบไม่ถูกต้อง", true);
+          return;
+        }
+
+        if (!window.confirm(`พบข้อมูลนิสิต ${newStudents.length} คน ยืนยันการนำเข้า?`)) {
+          e.target.value = "";
+          return;
+        }
+
+        const prevStudents = [...students];
+        notify(`กำลังนำเข้านิสิต ${newStudents.length} คน (บันทึกพื้นหลัง)`);
+        setStudents(p => [...p, ...newStudents]);
+        
+        try {
+          await SheetsDB.batchAppendStudents(newStudents);
+          notify(`✓ นำเข้านิสิตสำเร็จสมบูรณ์`);
+        } catch(error) {
+          setStudents(prevStudents);
+          notify(`⚠ นำเข้าไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
+        }
+        
+      } catch (err) {
+        notify("⚠ เกิดข้อผิดพลาดในการอ่านไฟล์", true);
+      }
+      e.target.value = "";
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div>
       <div style={{ marginBottom:28 }}>
@@ -2451,9 +2520,19 @@ try {
             ลบที่เลือก ({selectedIds.size})
           </button>
         )}
-        <button style={{ ...btnStyle("ghost"), marginLeft:"auto", fontSize:13 }} onClick={()=>setModal({type:tab==="students"?"student":"advisor",item:null})}>
-          + เพิ่ม {tab==="students"?"นิสิต":"อาจารย์"}
-        </button>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+          {tab === "students" && (
+            <>
+              <input type="file" accept=".xlsx" style={{ display: "none" }} ref={fileInputRef} onChange={handleImportExcel} />
+              <button style={{ ...btnStyle("ghost"), fontSize:13 }} onClick={() => fileInputRef.current?.click()}>
+                นำเข้าจาก Excel
+              </button>
+            </>
+          )}
+          <button style={{ ...btnStyle("ghost"), fontSize:13 }} onClick={()=>setModal({type:tab==="students"?"student":"advisor",item:null})}>
+            + เพิ่ม {tab==="students"?"นิสิต":"อาจารย์"}
+          </button>
+        </div>
       </div>
 
       {tab==="students"&&(
