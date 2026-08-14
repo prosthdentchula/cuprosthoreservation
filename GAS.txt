@@ -1,0 +1,230 @@
+/**
+ * DentaBook — Google Apps Script Backend  (Code.gs)
+ * 
+ * HOW TO DEPLOY / UPDATE:
+ *   1. Open your Apps Script project at script.google.com
+ *   2. Replace the entire contents of Code.gs with this file
+ *   3. Click Deploy → Manage deployments → select your deployment → Edit (pencil)
+ *   4. Change "Version" to "New version"  ← THIS IS CRITICAL
+ *   5. Click Deploy
+ */
+
+const SPREADSHEET_ID = "1o7EkotF_MdnwcGr8dlLD6EpONuUGivmvBR1RTNZp3wM";
+
+function makeResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  return makeResponse({ success: true, message: "DentaBook API ready" });
+}
+
+/* ── Main entry point ──────────────────────────────────────────────────────
+   Reads (syncAll, get) do NOT acquire the lock — they don't mutate anything,
+   so there's no correctness reason to make them wait behind other requests.
+   This is what caused the intermittent "stuck loading" on the client: a
+   student's login (syncAll) could get queued for up to 30s behind another
+   student's booking (append) even though the two operations never touch
+   each other in a conflicting way.
+   Writes (put, append) still acquire the lock, since they need mutual
+   exclusion to avoid race conditions (e.g. two students booking the same
+   unit at the same time). ── */
+function doPost(e) {
+  const payload = JSON.parse(e.postData.contents);
+  const action  = payload.action;
+
+  try {
+    // ── Reads: no lock needed ──
+    if (action === "syncAll") return makeResponse(handleSyncAll());
+    if (action === "get")     return makeResponse(handleGet(payload.range));
+
+    // ── Writes: require the lock ──
+    if (action === "put" || action === "append" || action === "batchDeactivateUsers" || action === "batchUpdateStatus") {
+      const lock = LockService.getScriptLock();
+      try {
+        lock.waitLock(30000); // wait up to 30s for other writes to finish
+        let result;
+        if (action === "put")    result = handlePut(payload.range, payload.values);
+        else if (action === "append") result = handleAppend(payload.range, payload.values);
+        else if (action === "batchDeactivateUsers") result = handleBatchDeactivateUsers(payload.studentIds || [], payload.advisorIds || []);
+        else if (action === "batchUpdateStatus") result = handleBatchUpdateStatus(payload.sheetName, payload.ids, payload.statusColIdx, payload.newValue);
+        return makeResponse(result);
+      } finally {
+        lock.releaseLock();
+      }
+    }
+
+    return makeResponse({ success: false, error: `Unknown action: ${action}` });
+  } catch (err) {
+    return makeResponse({ success: false, error: err.message });
+  }
+}
+
+function handleSyncAll() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  function sheetValues(name) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return [];
+    return sheet.getDataRange().getDisplayValues();
+  }
+  return {
+    success: true,
+    data: {
+      advisors:        sheetValues("Advisors"),
+      students:        sheetValues("Students"),
+      units:           sheetValues("Units"),
+      sessionAdvisors: sheetValues("Session_Advisors"),
+      reservations:    sheetValues("Reservations"),
+      admins:          sheetValues("Admins"),
+      monthlyLineups:  sheetValues("MonthlyLineups"),
+      equipment:             sheetValues("Equipment"),
+      equipmentReservations: sheetValues("EquipmentReservations"),
+    }
+  };
+}
+
+function handleGet(range) {
+  const ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const values = ss.getRange(range).getDisplayValues(); 
+  return { success: true, values: values };
+}
+
+function handlePut(range, values) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  ss.getRange(range).setValues(values);
+  SpreadsheetApp.flush();
+  return { success: true };
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   handleAppend — Now with "One-Winner" Validation for Reservations
+   ════════════════════════════════════════════════════════════════════════════ */
+function handleAppend(range, values) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetName = range.includes("!") ? range.split("!")[0] : range;
+  const sheet     = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error(`Sheet not found: ${sheetName}`);
+
+  // ─── Conflict Check for Reservations ───
+  if (sheetName === "Reservations") {
+    const newRow = values[0];
+    const unitId = newRow[3];
+    const date   = newRow[4];
+    const session = newRow[5];
+    const isOverbookIntent = String(newRow[10]).toUpperCase() === "TRUE";
+
+    // If the student didn't explicitly intend to overbook, check if it's already taken
+    if (!isOverbookIntent) {
+      const existingData = sheet.getDataRange().getValues();
+      // Skip header row
+      for (let i = 1; i < existingData.length; i++) {
+        const row = existingData[i];
+        // Column mapping: D=3 (unitId), E=4 (date), F=5 (session), J=9 (status)
+        if (String(row[3]) === String(unitId) && 
+            String(row[4]) === String(date) && 
+            String(row[5]) === String(session) && 
+            String(row[9]).toLowerCase() !== "cancelled") {
+          
+          return { 
+            success: false, 
+            error: "ขออภัย! ยูนิตนี้ถูกจองไปแล้วในเสี้ยววินาทีที่ผ่านมา โปรดเลือกยูนิตอื่น" 
+          };
+        }
+      }
+    }
+  }
+// ─── Conflict Check for Equipment Reservations ───
+  if (sheetName === "EquipmentReservations") {
+    const newRow = values[0];
+    const equipmentId = newRow[3];
+    const date        = newRow[4];
+    const timeSlot     = newRow[5];
+
+    const existingData = sheet.getDataRange().getValues();
+    for (let i = 1; i < existingData.length; i++) {
+      const row = existingData[i];
+      // Column mapping: D=3 (equipmentId), E=4 (date), F=5 (timeSlot), I=8 (status)
+      if (String(row[3]) === String(equipmentId) &&
+          String(row[4]) === String(date) &&
+          String(row[5]) === String(timeSlot) &&
+          String(row[8]).toLowerCase() !== "cancelled") {
+        return {
+          success: false,
+          error: "ขออภัย! อุปกรณ์นี้ถูกจองไปแล้วในช่วงเวลานี้ โปรดเลือกช่วงเวลาอื่น"
+        };
+      }
+    }
+  }
+  sheet.getRange(sheet.getLastRow() + 1, 1, values.length, values[0].length)
+       .setValues(values);
+  SpreadsheetApp.flush();
+  return { success: true };
+}
+
+function handleBatchDeactivateUsers(studentIds, advisorIds) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  if (studentIds.length > 0) {
+    const sheet = ss.getSheetByName("Students");
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        if (studentIds.includes(String(data[i][0]))) {
+          sheet.getRange(i + 1, 7).setValue("FALSE"); // Column G is active
+        }
+      }
+    }
+  }
+
+  if (advisorIds.length > 0) {
+    const sheet = ss.getSheetByName("Advisors");
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        if (advisorIds.includes(String(data[i][0]))) {
+          sheet.getRange(i + 1, 7).setValue("FALSE"); // Column G is active
+        }
+      }
+    }
+  }
+
+  SpreadsheetApp.flush();
+  return { success: true };
+}
+
+function handleBatchUpdateStatus(sheetName, ids, statusColIdx, newValue) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(sheetName);
+  if (sheet && ids && ids.length > 0) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (ids.includes(String(data[i][0]))) {
+        sheet.getRange(i + 1, statusColIdx).setValue(newValue);
+      }
+    }
+  }
+  SpreadsheetApp.flush();
+  return { success: true };
+}
+
+/* ── Keep-warm: pings the spreadsheet periodically to reduce cold starts.
+   Run setupKeepWarmTrigger() ONCE manually from the editor (Run button) 
+   to install the trigger — don't call it from doGet/doPost. ── */
+function keepWarm() {
+  SpreadsheetApp.openById(SPREADSHEET_ID).getName();
+}
+
+function setupKeepWarmTrigger() {
+  // Clear any existing keepWarm triggers first (avoid duplicates on re-run)
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === "keepWarm") ScriptApp.deleteTrigger(t);
+  });
+  // Every 10 minutes, all day — adjust the .everyMinutes() value if you want
+  // to restrict this to operating hours only (saves quota, but simpler as-is)
+  ScriptApp.newTrigger("keepWarm")
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+}

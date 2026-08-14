@@ -1,0 +1,6 @@
+To push your new Supabase branch to GitHub, open your terminal (PowerShell or Command Prompt) and paste the following commands:
+
+cd D:\User\Desktop\repo_clone
+git push -u origin update-supabase -f
+
+Note: When you hit Enter, Git will likely open a popup window or browser page asking you to sign in to GitHub to authorize the push. Once you sign in, the push will complete successfully!
