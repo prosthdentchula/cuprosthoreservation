@@ -629,6 +629,10 @@ function EquipmentBookingModal({ equipment, date, timeSlot, maxDuration = 1, onC
           <input style={inpStyle} value={caseHn} onChange={e => setCaseHn(e.target.value)} placeholder="เช่น HN-20341" />
         </div>
       </div>
+      <div style={{ marginTop: 14, padding: "10px 14px", background: "#fff4e5", color: "#b25205", borderRadius: 6, fontSize: 13, border: "1px solid #ffe0b2", display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 16 }}>⚠️</span>
+        <span style={{ fontWeight: 600 }}>ต้งพี่หนิง เพื่อคืหลังใช้เสร็จทุกครั้ง!</span>
+      </div>
       {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
         <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
