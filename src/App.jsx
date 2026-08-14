@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { SheetsDB, initGoogleAuth } from "./google-sheets-sync.js";
+import { SheetsDB, initGoogleAuth } from "./supabase-sync.js";
 
 const fontLink = document.createElement("link");
 fontLink.rel = "stylesheet";
