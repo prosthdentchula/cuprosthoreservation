@@ -6,12 +6,22 @@ export async function initGoogleAuth() {
 
 export const SheetsDB = {
   async syncAll() {
+    // Fetch all reservations manually to bypass the 1000-row limit
+    let allReservations = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase.from('reservations').select('*').range(from, from + 999);
+      if (error) throw error;
+      if (data) allReservations = allReservations.concat(data);
+      if (!data || data.length < 1000) break;
+      from += 1000;
+    }
+
     const [
       { data: advisors },
       { data: students },
       { data: units },
       { data: sessionAdvisors },
-      { data: reservations },
       { data: admins },
       { data: monthlyLineups },
       { data: equipment },
@@ -21,12 +31,13 @@ export const SheetsDB = {
       supabase.from('students').select('*'),
       supabase.from('units').select('*'),
       supabase.from('session_advisors').select('*'),
-      supabase.from('reservations').select('*'),
       supabase.from('admins').select('*'),
       supabase.from('monthly_lineups').select('*'),
       supabase.from('equipment').select('*'),
       supabase.from('equipment_reservations').select('*')
     ]);
+
+    const reservations = allReservations;
 
     // Map Supabase rows to match the old format expected by App.jsx
     return {
