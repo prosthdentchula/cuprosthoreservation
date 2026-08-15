@@ -142,15 +142,26 @@ const INIT_UNITS = [
 
 /* ═══ EQUIPMENT (Intraoral Scanners & Dongles) ═══════════════════════════════ */
 const SEED_EQUIPMENT = [
-  { id:"IOS01", category:"ios", name:"iTero Element 5D",     brand:"Align Technology", subtype:"",                 serialNumber:"ITR-5D-001", status:"active" },
-  { id:"IOS02", category:"ios", name:"3Shape TRIOS 4",       brand:"3Shape",           subtype:"",                 serialNumber:"3SH-T4-001", status:"active" },
-  { id:"IOS03", category:"ios", name:"Medit i700",           brand:"Medit",            subtype:"",                 serialNumber:"MDT-I7-001", status:"active" },
-  { id:"IOS04", category:"ios", name:"CEREC Primescan",      brand:"Dentsply Sirona",  subtype:"",                 serialNumber:"DS-PS-001",  status:"active" },
-  { id:"DGL01", category:"dongle", name:"Exocad DentalCAD",     brand:"Exocad",         subtype:"CAD",              serialNumber:"DGL-EXO-01", status:"active" },
-  { id:"DGL02", category:"dongle", name:"3Shape Dental System", brand:"3Shape",         subtype:"CAD",              serialNumber:"DGL-3SH-01", status:"active" },
-  { id:"DGL03", category:"dongle", name:"Blue Sky Plan",        brand:"Blue Sky Bio",   subtype:"Implant Planning", serialNumber:"DGL-BSP-01", status:"active" },
-  { id:"DGL04", category:"dongle", name:"coDiagnostiX",         brand:"Dental Wings",   subtype:"Implant Planning", serialNumber:"DGL-CDX-01", status:"active" },
-  { id:"DGL05", category:"dongle", name:"SIMPLANT",             brand:"Dentsply Sirona",subtype:"Implant Planning", serialNumber:"DGL-SIM-01", status:"active" },
+  { id:"IOS01", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-01", status:"active" },
+  { id:"IOS02", category:"ios", name:"Medit i700",           brand:"Medit",            subtype:"", serialNumber:"EQ-02", status:"active" },
+  { id:"IOS03", category:"ios", name:"PANDA P2",             brand:"PANDA Scanner",    subtype:"", serialNumber:"EQ-03", status:"active" },
+  { id:"IOS04", category:"ios", name:"PANDA P3",             brand:"PANDA Scanner",    subtype:"", serialNumber:"EQ-04", status:"active" },
+  { id:"IOS05", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-05", status:"active" },
+  { id:"IOS06", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-06", status:"active" },
+  { id:"IOS07", category:"ios", name:"PRIMESCAN",            brand:"Dentsply Sirona",  subtype:"", serialNumber:"EQ-07", status:"active" },
+  { id:"IOS08", category:"ios", name:"PRIMESCAN",            brand:"Dentsply Sirona",  subtype:"", serialNumber:"EQ-08", status:"active" },
+  { id:"IOS09", category:"ios", name:"SIRIOS X3",            brand:"SIRIOS",           subtype:"", serialNumber:"EQ-09", status:"active" },
+  { id:"IOS10", category:"ios", name:"SIRIOS X3",            brand:"SIRIOS",           subtype:"", serialNumber:"EQ-10", status:"active" },
+  { id:"DGL01", category:"dongle", name:"3Shape",            brand:"3Shape",           subtype:"CAD", serialNumber:"DGL-01", status:"active" },
+  { id:"DGL02", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-02", status:"active" },
+  { id:"DGL03", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-03", status:"active" },
+  { id:"DGL04", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-04", status:"active" },
+  { id:"DGL05", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-05", status:"active" },
+  { id:"DGL06", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-06", status:"active" },
+  { id:"DGL07", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-07", status:"active" },
+  { id:"DGL08", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-08", status:"active" },
+  { id:"DGL09", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-09", status:"active" },
+  { id:"DGL10", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-10", status:"active" },
 ];
 
 const EQUIP_CATEGORY_LABELS = { ios:"เครื่องสแกนช่องปาก (IOS)", dongle:"ดองเกิลโปรแกรม" };
