@@ -1,0 +1,8 @@
+-- 1. Remove the strict UNIQUE constraint that blocks all 2nd reservations
+ALTER TABLE reservations DROP CONSTRAINT IF EXISTS reservations_unit_id_date_session_key;
+
+-- 2. Create a "Partial Unique Index" that only blocks double-booking for NORMAL reservations
+-- This allows overbooked, ghost, and inherited reservations to share the same unit!
+CREATE UNIQUE INDEX IF NOT EXISTS reservations_normal_booking_idx 
+ON reservations (unit_id, date, session) 
+WHERE overbooked = false AND is_ghost = false AND inherit_unit = false;

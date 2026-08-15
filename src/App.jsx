@@ -655,7 +655,7 @@ function EquipmentBookingModal({ equipment, date, timeSlot, maxDuration = 1, onC
 }
 
 /* ═══ EQUIPMENT BROWSE / BOOK (student + advisor) ═══════════════════════════════ */
-function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook }) {
+function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook, onCancel }) {
   const [category, setCategory] = useState("ios");
   const [date, setDate]         = useState(next14Days[0]);
   const [target, setTarget]     = useState(null); // { item, slot }
@@ -703,7 +703,21 @@ function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook })
               const isMine = bk?.studentId === user.id;
               return (
                 <button key={slot} disabled={!!bk && !isMine}
-                  onClick={() => !bk && setTarget({ item, slot })}
+                  onClick={() => {
+                    if (!bk) {
+                      setTarget({ item, slot });
+                    } else if (isMine) {
+                      const currentHour = new Date().getHours();
+                      const slotStartHour = parseInt(slot.split(":")[0]);
+                      if (date < todayStr || (date === todayStr && currentHour >= slotStartHour)) {
+                        alert("ไม่สามารถยกเลิกการจองที่ถึงเวลาหรือผ่านมาแล้วได้");
+                      } else {
+                        if (window.confirm(`คุณต้องการยกเลิกการจอง ${item.name} เวลา ${slot} ใช่หรือไม่?`)) {
+                          onCancel(bk.id);
+                        }
+                      }
+                    }
+                  }}
                   style={{
                     padding:"9px 6px", borderRadius:8, fontSize:12, fontWeight:500,
                     border:`1px solid ${bk ? (isMine ? C.greenLine : C.line) : C.line}`,
@@ -712,7 +726,7 @@ function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook })
                     cursor:bk && !isMine ? "not-allowed" : "pointer",
                   }}>
                   {slot}
-                  <div style={{ fontSize:10, marginTop:2 }}>{bk ? (isMine ? "ของฉัน" : "ไม่ว่าง") : "ว่าง"}</div>
+                  <div style={{ fontSize:10, marginTop:2 }}>{bk ? (isMine ? "ยกเลิก" : "ไม่ว่าง") : "ว่าง"}</div>
                 </button>
               );
             })}
@@ -4186,7 +4200,7 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
         {page==="overview"          && <BrowsePage reservations={reservations} user={{...user, role:"overview"}} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} onBook={book} />}
         {page==="my-res"            && <MyReservationsPage reservations={reservations} user={user} units={units} sessionAdvisors={sessionAdvisors} advisors={advisors} onCancel={cancel} onEdit={editReservation} />}
         {page==="admin-overview"    && <AdminOverview reservations={reservations} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} />}
-        {page==="equip-browse"     && <EquipmentBrowsePage equipment={equipment} equipmentReservations={equipmentReservations} user={user} onBook={bookEquipment} />}
+        {page==="equip-browse"     && <EquipmentBrowsePage equipment={equipment} equipmentReservations={equipmentReservations} user={user} onBook={bookEquipment} onCancel={cancelEquipmentBooking} />}
         {page==="admin-equipment"  && <AdminEquipmentPage equipment={equipment} setEquipment={setEquipment} notify={notify} />}
         {page==="admin-equip-res"  && <AdminEquipmentReservationsPage equipmentReservations={equipmentReservations} equipment={equipment} onCancel={cancelEquipmentBooking} onUpdateStatus={updateEquipmentResStatus} />}
         {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} monthlyLineups={monthlyLineups} notify={notify} />}
