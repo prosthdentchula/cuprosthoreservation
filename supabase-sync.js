@@ -4,6 +4,24 @@ export async function initGoogleAuth() {
   return true; // Keep for backward compatibility
 }
 
+async function fetchAll(table) {
+  let allData = [];
+  let from = 0;
+  const step = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .range(from, from + step - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < step) break;
+    from += step;
+  }
+  return { data: allData };
+}
+
 export const SheetsDB = {
   async syncAll() {
     const [
@@ -17,15 +35,15 @@ export const SheetsDB = {
       { data: equipment },
       { data: equipmentReservations }
     ] = await Promise.all([
-      supabase.from('advisors').select('*'),
-      supabase.from('students').select('*'),
-      supabase.from('units').select('*'),
-      supabase.from('session_advisors').select('*'),
-      supabase.from('reservations').select('*'),
-      supabase.from('admins').select('*'),
-      supabase.from('monthly_lineups').select('*'),
-      supabase.from('equipment').select('*'),
-      supabase.from('equipment_reservations').select('*')
+      fetchAll('advisors'),
+      fetchAll('students'),
+      fetchAll('units'),
+      fetchAll('session_advisors'),
+      fetchAll('reservations'),
+      fetchAll('admins'),
+      fetchAll('monthly_lineups'),
+      fetchAll('equipment'),
+      fetchAll('equipment_reservations')
     ]);
 
     // Map Supabase rows to match the old format expected by App.jsx
