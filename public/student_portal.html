@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equipment Unlock Portal</title>
+    
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- TOTP Library for browser -->
+    <script src="https://unpkg.com/otplib@12.0.1/otplib-browser/index.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+        input { width: 90%; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+        button { background: #27ae60; color: white; border: none; padding: 15px 30px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; transition: background 0.3s; box-sizing: border-box; }
+        button:hover { background: #219a52; }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        #resultArea { margin-top: 30px; display: none; }
+        .pin-display { font-size: 48px; font-weight: bold; color: #2c3e50; letter-spacing: 5px; margin: 10px 0; }
+        .error { color: #e74c3c; margin-top: 20px; font-weight: bold; }
+        .timer { font-size: 14px; color: #7f8c8d; }
+        .success-text { color: #27ae60; font-weight: 600; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Scanner Unlock</h2>
+    <p style="color:#7f8c8d; font-size: 14px;">Enter your 10-digit Student ID to verify your reservation and get the current unlock PIN.</p>
+    
+    <input type="text" id="studentId" placeholder="e.g., 6431234567">
+    <button id="btnCheck" onclick="checkReservation()">Check Reservation</button>
+
+    <div id="errorMsg" class="error"></div>
+
+    <div id="resultArea">
+        <p class="success-text">Reservation Verified!</p>
+        <p style="margin:0; font-size:13px; color:#555;" id="greetingText"></p>
+        <p style="margin-top:20px; font-size:14px;">Your PIN is:</p>
+        <div id="pinDisplay" class="pin-display">------</div>
+        <p class="timer">This PIN expires in <span id="timeRemaining">30</span> seconds.</p>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const SUPABASE_URL = 'https://qznrajnkzgqfsgxxdwit.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_pJvv2oNfWpz8U3x-HcyBFA_tdzbQmy7';
+    
+    // This MUST match the secret in the Python app exactly
+    const TOTP_SECRET = 'JBSWY3DPEHPK3PXP'; 
+    
+    // Initialize Supabase 
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let pinInterval = null;
+
+    async function checkReservation() {
+        const username = document.getElementById('studentId').value.trim();
+        const errorMsg = document.getElementById('errorMsg');
+        const resultArea = document.getElementById('resultArea');
+        const btn = document.getElementById('btnCheck');
+        
+        errorMsg.innerText = '';
+        resultArea.style.display = 'none';
+        if (pinInterval) clearInterval(pinInterval);
+
+        if (!username) {
+            errorMsg.innerText = 'Please enter your Student ID.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'Checking...';
+
+        try {
+            // 1. Get the Student UUID by their Username (10-digit ID)
+            const { data: student, error: studentError } = await supabase
+                .from('students')
+                .select('id, name')
+                .eq('username', username)
+                .single();
+
+            if (studentError || !student) {
+                errorMsg.innerText = 'Student not found. Please check your ID.';
+                btn.disabled = false;
+                btn.innerText = 'Check Reservation';
+                return;
+            }
+
+            // 2. Format current date and time slot
+            const now = new Date();
+            const todayStr = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0');
+            
+            // Format time slot e.g., "09:00-10:00"
+            const h = now.getHours();
+            const currentSlot = `${String(h).padStart(2, '0')}:00-${String(h + 1).padStart(2, '0')}:00`;
+
+            // 3. Check for an active reservation for this exact time slot
+            const { data: reservations, error: resError } = await supabase
+                .from('equipment_reservations')
+                .select('*')
+                .eq('student_id', student.id)
+                .eq('date', todayStr)
+                .eq('time_slot', currentSlot)
+                .eq('status', 'confirmed');
+
+            if (resError) throw resError;
+
+            if (!reservations || reservations.length === 0) {
+                errorMsg.innerText = `No active reservation found for ${currentSlot}.`;
+                btn.disabled = false;
+                btn.innerText = 'Check Reservation';
+                return;
+            }
+
+            // If reservation is valid, show greeting and start PIN generation!
+            document.getElementById('greetingText').innerText = `Welcome, ${student.name}`;
+            startPinGeneration();
+
+        } catch (err) {
+            console.error(err);
+            errorMsg.innerText = 'Error connecting to the reservation system.';
+        }
+
+        btn.disabled = false;
+        btn.innerText = 'Check Reservation';
+    }
+
+    function startPinGeneration() {
+        document.getElementById('resultArea').style.display = 'block';
+        updatePin(); // Run immediately
+        pinInterval = setInterval(updatePin, 1000); // Update timer every second
+    }
+
+    function updatePin() {
+        // Generate the 6-digit PIN using the same secret as the Python app
+        const token = otplib.authenticator.generate(TOTP_SECRET);
+        document.getElementById('pinDisplay').innerText = token;
+
+        // Calculate time remaining in the current 30-second window
+        const epoch = Math.floor(new Date().getTime() / 1000);
+        const remaining = 30 - (epoch % 30);
+        document.getElementById('timeRemaining').innerText = remaining;
+    }
+</script>
+
+</body>
+</html>
