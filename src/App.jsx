@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { SheetsDB, initGoogleAuth } from "./google-sheets-sync.js";
+import { SheetsDB, initGoogleAuth } from "./supabase-sync.js";
+import * as XLSX from "xlsx";
 
 const fontLink = document.createElement("link");
 fontLink.rel = "stylesheet";
@@ -20,9 +21,9 @@ document.head.appendChild(fontLink);
    Stores the logged-in user in sessionStorage so a reload doesn't log them out.
    sessionStorage is cleared automatically when the browser tab is closed.      */
 const SESSION_KEY = "cuprostho_session";
-function saveSession(u)    { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch(_){} }
-function loadSession()     { try { const s = sessionStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null; } catch(_){ return null; } }
-function clearSession()    { try { sessionStorage.removeItem(SESSION_KEY); } catch(_){} }
+function saveSession(u)    { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch{} }
+function loadSession()     { try { const s = sessionStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null; } catch{ return null; } }
+function clearSession()    { try { sessionStorage.removeItem(SESSION_KEY); } catch{} }
 
 /* ═══ SEED DATA  (initial state before first Sheets sync) ═══════════════════════
    dow: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
@@ -140,6 +141,40 @@ const INIT_UNITS = [
   }),
 ];
 
+/* ═══ EQUIPMENT (Intraoral Scanners & Dongles) ═══════════════════════════════ */
+const SEED_EQUIPMENT = [
+  { id:"IOS01", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-01", status:"active" },
+  { id:"IOS02", category:"ios", name:"Medit i700",           brand:"Medit",            subtype:"", serialNumber:"EQ-02", status:"active" },
+  { id:"IOS03", category:"ios", name:"PANDA P2",             brand:"PANDA Scanner",    subtype:"", serialNumber:"EQ-03", status:"active" },
+  { id:"IOS04", category:"ios", name:"PANDA P3",             brand:"PANDA Scanner",    subtype:"", serialNumber:"EQ-04", status:"active" },
+  { id:"IOS05", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-05", status:"active" },
+  { id:"IOS06", category:"ios", name:"TRIOS 5",              brand:"3Shape",           subtype:"", serialNumber:"EQ-06", status:"active" },
+  { id:"IOS07", category:"ios", name:"PRIMESCAN",            brand:"Dentsply Sirona",  subtype:"", serialNumber:"EQ-07", status:"active" },
+  { id:"IOS08", category:"ios", name:"PRIMESCAN",            brand:"Dentsply Sirona",  subtype:"", serialNumber:"EQ-08", status:"active" },
+  { id:"IOS09", category:"ios", name:"SIRIOS X3",            brand:"SIRIOS",           subtype:"", serialNumber:"EQ-09", status:"active" },
+  { id:"IOS10", category:"ios", name:"SIRIOS X3",            brand:"SIRIOS",           subtype:"", serialNumber:"EQ-10", status:"active" },
+  { id:"DGL01", category:"dongle", name:"3Shape",            brand:"3Shape",           subtype:"CAD", serialNumber:"DGL-01", status:"active" },
+  { id:"DGL02", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-02", status:"active" },
+  { id:"DGL03", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-03", status:"active" },
+  { id:"DGL04", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-04", status:"active" },
+  { id:"DGL05", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-05", status:"active" },
+  { id:"DGL06", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-06", status:"active" },
+  { id:"DGL07", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-07", status:"active" },
+  { id:"DGL08", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-08", status:"active" },
+  { id:"DGL09", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-09", status:"active" },
+  { id:"DGL10", category:"dongle", name:"ExoCAD Dental CAD", brand:"Exocad",           subtype:"CAD", serialNumber:"DGL-10", status:"active" },
+];
+
+const EQUIP_CATEGORY_LABELS = { ios:"เครื่องสแกนช่องปาก (IOS)", dongle:"ดองเกิลโปรแกรม" };
+const EQUIP_SUBTYPE_LABELS  = { CAD:"CAD", "Implant Planning":"วางแผนรากฟันเทียม" };
+
+/* Equipment is booked per hour-block 08:00–17:00 (finer-grained than unit sessions,
+   since one scanner/dongle typically serves many students in a day). */
+const EQUIP_TIME_SLOTS = Array.from({ length: 9 }, (_, i) => {
+  const h = 8 + i;
+  return `${String(h).padStart(2, "0")}:00-${String(h + 1).padStart(2, "0")}:00`;
+});
+
 /* Auto-assign advisors for a given date+session.
    Zone A/B/C is determined purely by position in the advisors array —
    the first matching advisor gets Zone A, second gets Zone B, third gets Zone C.
@@ -202,6 +237,13 @@ function generateId(type, existingItems) {
     const nums = existingItems.map(a=>parseInt(a.id.replace(/\D/g,""),10)).filter(n=>!isNaN(n));
     const next = nums.length ? Math.max(...nums)+1 : 1;
     return `ADV${String(next).padStart(3,"0")}`;
+  }
+  if (type === "equipmentReservation") {
+    const d = todayStr.replace(/-/g, "");
+    const todayRsvs = existingItems.filter(r => r.createdAt === todayStr || r.id.startsWith(`ER-${d}`));
+    const n = String(todayRsvs.length + 1).padStart(4, "0");
+    const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `ER-${d}-${n}-${rand}`;
   }
   return `${type}-${Date.now()}`;
 }
@@ -552,6 +594,452 @@ function BookingModal({ unit, date, session, reservations, sessionAdvisors, advi
   );
 }
 
+/* ═══ EQUIPMENT BOOKING MODAL ═════════════════════════════════════════════════ */
+function EquipmentBookingModal({ equipment, date, timeSlot, maxDuration = 1, onConfirm, onClose }) {
+  const [purpose, setPurpose] = useState("");
+  const [caseHn, setCaseHn]   = useState("");
+  const [duration, setDuration] = useState(1);
+  const [err, setErr]         = useState("");
+
+  const submit = () => {
+    if (!purpose.trim()) return setErr("กรุณากรอกวัตถุประสงค์การใช้งาน");
+    onConfirm({ purpose, caseHn, duration });
+  };
+
+  const startHour = parseInt(timeSlot.split(":")[0], 10);
+  const endHour = startHour + duration;
+  const displayTime = `${String(startHour).padStart(2,"0")}:00-${String(endHour).padStart(2,"0")}:00`;
+
+  return (
+    <Modal title={`จอง ${equipment.name}`} onClose={onClose}>
+      <div style={{ background:C.soft, borderRadius:8, padding:"12px 16px", marginBottom:18, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+        {[
+          ["อุปกรณ์", equipment.name],
+          ["ประเภท", EQUIP_CATEGORY_LABELS[equipment.category]],
+          equipment.subtype ? ["หมวดหมู่", EQUIP_SUBTYPE_LABELS[equipment.subtype] || equipment.subtype] : null,
+          ["วันที่", displayDate(date)],
+          ["ช่วงเวลา", displayTime],
+        ].filter(Boolean).map(([k, v]) => (
+          <div key={k}><span style={{ ...lblStyle, marginBottom:2 }}>{k}</span><span style={{ fontSize:13.5, fontWeight:500 }}>{v}</span></div>
+        ))}
+      </div>
+      <div style={{ display:"grid", gap:14 }}>
+        <div>
+          <label style={lblStyle}>ระยะเวลา (ชั่วโมง)</label>
+          <select style={{ ...inpStyle, width:"100%" }} value={duration} onChange={e => setDuration(Number(e.target.value))}>
+            {Array.from({length: maxDuration}, (_, i) => i + 1).map(d => (
+              <option key={d} value={d}>{d} ชั่วโมง</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={lblStyle}>วัตถุประสงค์การใช้งาน *</label>
+          <input style={inpStyle} value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="เช่น สแกนเพื่อทำ Crown, วางแผนรากฟันเทียม" />
+        </div>
+        <div>
+          <label style={lblStyle}>เคส / HN ผู้ป่วย (ถ้ามี)</label>
+          <input style={inpStyle} value={caseHn} onChange={e => setCaseHn(e.target.value)} placeholder="เช่น HN-20341" />
+        </div>
+      </div>
+      <div style={{ marginTop: 14, padding: "10px 14px", background: "#fff4e5", color: "#b25205", borderRadius: 6, fontSize: 13, border: "1px solid #ffe0b2", display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 16 }}>⚠️</span>
+        <span style={{ fontWeight: 600 }}>แจ้งพี่หนิงเพื่อคืนหลังใช้เสร็จทุกครั้ง!</span>
+      </div>
+      {err && <p style={{ margin:"12px 0 0", color:C.red, fontSize:13 }}>{err}</p>}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:22 }}>
+        <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
+        <button style={btnStyle("primary")} onClick={submit}>ยืนยันการจอง</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ═══ EQUIPMENT BROWSE / BOOK (student + advisor) ═══════════════════════════════ */
+function EquipmentBrowsePage({ equipment, equipmentReservations, user, onBook, onCancel }) {
+  const [category, setCategory] = useState("ios");
+  const [date, setDate]         = useState(next14Days[0]);
+  const [target, setTarget]     = useState(null); // { item, slot }
+
+  const items = equipment.filter(e => e.category === category && e.status === "active");
+  const bookingFor = (equipId, slot) =>
+    equipmentReservations.find(r => r.equipmentId === equipId && r.date === date && r.timeSlot === slot && r.status !== "cancelled");
+
+  return (
+    <div>
+      <div style={{ marginBottom:28 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จองอุปกรณ์</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>เครื่องสแกนช่องปาก (IOS) และดองเกิลโปรแกรม · จองเป็นรายชั่วโมง</p>
+      </div>
+
+      <div style={{ display:"flex", gap:8, marginBottom:18 }}>
+        {Object.entries(EQUIP_CATEGORY_LABELS).map(([k, l]) => (
+          <button key={k} onClick={() => setCategory(k)} style={{ ...btnStyle(category === k ? "primary" : "ghost"), fontSize:13 }}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom:18, padding:"14px 18px" }}>
+        <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
+          {next14Days.map(d => (
+            <button key={d} onClick={() => setDate(d)} style={{ flexShrink:0, padding:"8px 12px", borderRadius:8, border:date === d ? `1.5px solid ${C.ink}` : `1px solid ${C.line}`, background:date === d ? C.ink : "#fff", color:date === d ? "#fff" : C.ink, cursor:"pointer", fontFamily:"'Sarabun','Outfit',sans-serif", fontSize:12.5, fontWeight:500, minWidth:74, textAlign:"center" }}>
+              {shortDay(d)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ ...cardStyle, textAlign:"center", padding:"52px", color:C.muted }}>ไม่มีอุปกรณ์ในหมวดนี้</div>
+      ) : items.map(item => (
+        <div key={item.id} style={{ ...cardStyle, marginBottom:16 }}>
+          <div style={{ marginBottom:12 }}>
+            <p style={{ margin:0, fontWeight:600, fontSize:15 }}>{item.name}</p>
+            <p style={{ margin:"2px 0 0", fontSize:12, color:C.muted }}>
+              {item.brand}{item.subtype ? ` · ${EQUIP_SUBTYPE_LABELS[item.subtype] || item.subtype}` : ""} · S/N {item.serialNumber}
+            </p>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8 }}>
+            {EQUIP_TIME_SLOTS.map(slot => {
+              const bk = bookingFor(item.id, slot);
+              const isMine = bk?.studentId === user.id;
+              return (
+                <button key={slot} disabled={!!bk && !isMine}
+                  onClick={() => {
+                    if (!bk) {
+                      setTarget({ item, slot });
+                    } else if (isMine) {
+                      const currentHour = new Date().getHours();
+                      const slotStartHour = parseInt(slot.split(":")[0]);
+                      if (date < todayStr || (date === todayStr && currentHour >= slotStartHour)) {
+                        alert("ไม่สามารถยกเลิกการจองที่ถึงเวลาหรือผ่านมาแล้วได้");
+                      } else {
+                        if (window.confirm(`คุณต้องการยกเลิกการจอง ${item.name} เวลา ${slot} ใช่หรือไม่?`)) {
+                          onCancel(bk.id);
+                        }
+                      }
+                    }
+                  }}
+                  style={{
+                    padding:"9px 6px", borderRadius:8, fontSize:12, fontWeight:500,
+                    border:`1px solid ${bk ? (isMine ? C.greenLine : C.line) : C.line}`,
+                    background:bk ? (isMine ? C.greenBg : C.soft) : "#fff",
+                    color:bk ? (isMine ? C.green : C.faint) : C.ink,
+                    cursor:bk && !isMine ? "not-allowed" : "pointer",
+                  }}>
+                  {slot}
+                  <div style={{ fontSize:10, marginTop:2 }}>{bk ? (isMine ? "ยกเลิก" : "ไม่ว่าง") : "ว่าง"}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {target && (() => {
+        const startIndex = EQUIP_TIME_SLOTS.indexOf(target.slot);
+        let maxDuration = 1;
+        for (let i = 1; i < 3; i++) {
+          if (startIndex + i >= EQUIP_TIME_SLOTS.length) break;
+          const nextSlot = EQUIP_TIME_SLOTS[startIndex + i];
+          if (bookingFor(target.item.id, nextSlot)) break;
+          maxDuration++;
+        }
+
+        return (
+          <EquipmentBookingModal equipment={target.item} date={date} timeSlot={target.slot} maxDuration={maxDuration}
+            onClose={() => setTarget(null)}
+            onConfirm={(data) => { onBook({ equipment: target.item, date, timeSlot: target.slot, duration: data.duration, ...data }); setTarget(null); }} />
+        );
+      })()}
+    </div>
+  );
+}
+
+/* ═══ ADMIN — EQUIPMENT INVENTORY ═══════════════════════════════════════════════ */
+function EquipmentFormModal({ item, onSave, onClose }) {
+  const [category, setCategory]     = useState(item?.category || "ios");
+  const [name, setName]             = useState(item?.name || "");
+  const [brand, setBrand]           = useState(item?.brand || "");
+  const [subtype, setSubtype]       = useState(item?.subtype || "");
+  const [serialNumber, setSN]       = useState(item?.serialNumber || "");
+  const [err, setErr]               = useState("");
+
+  const save = () => {
+    if (!name.trim())  return setErr("กรุณากรอกชื่ออุปกรณ์");
+    if (!brand.trim()) return setErr("กรุณากรอกยี่ห้อ");
+    onSave({ id: item?.id || "", category, name, brand, subtype: category === "dongle" ? subtype : "", serialNumber, status: item?.status || "active" });
+  };
+
+  return (
+    <Modal title={`${item ? "แก้ไข" : "เพิ่ม"}อุปกรณ์`} onClose={onClose}>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ประเภท</label>
+        <select style={inpStyle} value={category} onChange={e => setCategory(e.target.value)}>
+          <option value="ios">เครื่องสแกนช่องปาก (IOS)</option>
+          <option value="dongle">ดองเกิลโปรแกรม</option>
+        </select>
+      </div>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ชื่ออุปกรณ์ / โปรแกรม</label>
+        <input style={inpStyle} value={name} onChange={e => setName(e.target.value)} placeholder={category === "ios" ? "เช่น iTero Element 5D" : "เช่น Exocad DentalCAD"} />
+      </div>
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>ยี่ห้อ</label>
+        <input style={inpStyle} value={brand} onChange={e => setBrand(e.target.value)} />
+      </div>
+      {category === "dongle" && (
+        <div style={{ marginBottom:14 }}>
+          <label style={lblStyle}>หมวดหมู่โปรแกรม</label>
+          <select style={inpStyle} value={subtype} onChange={e => setSubtype(e.target.value)}>
+            <option value="">— เลือก —</option>
+            <option value="CAD">CAD</option>
+            <option value="Implant Planning">วางแผนรากฟันเทียม (Implant Planning)</option>
+          </select>
+        </div>
+      )}
+      <div style={{ marginBottom:14 }}>
+        <label style={lblStyle}>หมายเลขเครื่อง / Serial Number</label>
+        <input style={inpStyle} value={serialNumber} onChange={e => setSN(e.target.value)} />
+      </div>
+      {err && <p style={{ margin:"0 0 10px", color:C.red, fontSize:13 }}>{err}</p>}
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+        <button style={btnStyle("ghost")} onClick={onClose}>ยกเลิก</button>
+        <button style={btnStyle("primary")} onClick={save}>บันทึก</button>
+      </div>
+    </Modal>
+  );
+}
+
+function AdminEquipmentPage({ equipment, setEquipment, notify }) {
+  const [modal, setModal]           = useState(null); // { item }
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (items) => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`ยืนยันการลบ ${selectedIds.size} รายการที่เลือก?`)) return;
+
+    const ids = Array.from(selectedIds);
+    const prev = [...equipment];
+    setEquipment(p => p.filter(e => !ids.includes(e.id)));
+    notify("กำลังลบอุปกรณ์ที่เลือก (บันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.batchUpdateStatus("Equipment", ids, 7, "removed");
+      notify(`✓ ลบอุปกรณ์ ${ids.length} รายการเสร็จสมบูรณ์`);
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+    }
+    setSelectedIds(new Set());
+  };
+
+  const save = async (data) => {
+    const prev = [...equipment];
+    const isEdit = !!data.id;
+    let target = { ...data };
+    if (isEdit) setEquipment(p => p.map(e => e.id === target.id ? target : e));
+    else {
+      target = { ...target, id: `EQ-${Date.now()}` };
+      setEquipment(p => [...p, target]);
+    }
+    notify(`${isEdit ? "อัปเดต" : "เพิ่ม"}อุปกรณ์ (กำลังบันทึกพื้นหลัง)`);
+    setModal(null);
+    try {
+      if (isEdit) await SheetsDB.updateEquipment(target);
+      else        await SheetsDB.appendEquipment(target);
+      notify("✓ บันทึกอุปกรณ์ลงฐานข้อมูลเสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ บันทึกไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
+    }
+  };
+
+  const toggleStatus = async (item) => {
+    const newStatus = item.status === "active" ? "maintenance" : "active";
+    const prev = [...equipment];
+    setEquipment(p => p.map(e => e.id === item.id ? { ...e, status: newStatus } : e));
+    notify("อัปเดตสถานะอุปกรณ์ (กำลังบันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.saveEquipmentStatus(item.id, newStatus);
+      notify("✓ อัปเดตสถานะเสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ อัปเดตไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
+  const remove = async (id) => {
+    const prev = [...equipment];
+    setEquipment(p => p.filter(e => e.id !== id));
+    notify("ลบอุปกรณ์ (กำลังบันทึกพื้นหลัง)");
+    try {
+      await SheetsDB.saveEquipmentStatus(id, "removed");
+      notify("✓ ลบอุปกรณ์เสร็จสมบูรณ์");
+    } catch (error) {
+      setEquipment(prev);
+      notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom:28, display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>จัดการอุปกรณ์</h2>
+          <p style={{ margin:0, color:C.muted, fontSize:14 }}>เครื่องสแกนช่องปาก (IOS) และดองเกิลโปรแกรม</p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <button style={{ ...btnStyle("danger") }} onClick={handleBulkDelete}>ลบที่เลือก ({selectedIds.size})</button>
+          )}
+          <button style={{ ...btnStyle("ghost") }} onClick={() => toggleSelectAll(equipment)}>
+            {selectedIds.size === equipment.length && equipment.length > 0 ? "ยกเลิกการเลือก" : "เลือกทั้งหมด"}
+          </button>
+          <button style={btnStyle("primary")} onClick={() => setModal({ item: null })}>+ เพิ่มอุปกรณ์</button>
+        </div>
+      </div>
+
+      {["ios", "dongle"].map(cat => (
+        <div key={cat} style={{ marginBottom:26 }}>
+          <h3 style={{ fontSize:14, fontWeight:600, color:C.muted, textTransform:"uppercase", marginBottom:12 }}>{EQUIP_CATEGORY_LABELS[cat]}</h3>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
+            {equipment.filter(e => e.category === cat).map(item => (
+              <div key={item.id} style={{ ...cardStyle, padding:"14px 16px", outline: selectedIds.has(item.id) ? `2px solid ${C.primary}` : "none" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} />
+                    <span style={{ fontWeight:600, fontSize:14 }}>{item.name}</span>
+                  </div>
+                  <Badge t={item.status === "active" ? "active" : "maintenance"}>{item.status === "active" ? "ใช้งาน" : "ซ่อมบำรุง"}</Badge>
+                </div>
+                <p style={{ margin:0, fontSize:12, color:C.muted }}>{item.brand}{item.subtype ? ` · ${EQUIP_SUBTYPE_LABELS[item.subtype] || item.subtype}` : ""}</p>
+                <p style={{ margin:"2px 0 10px", fontSize:11.5, color:C.faint }}>S/N {item.serialNumber || "—"}</p>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button style={{ ...btnStyle("ghost"), padding:"5px 10px", fontSize:11.5 }} onClick={() => setModal({ item })}>แก้ไข</button>
+                  <button style={{ ...btnStyle("amber"), padding:"5px 10px", fontSize:11.5 }} onClick={() => toggleStatus(item)}>{item.status === "active" ? "ปิดซ่อม" : "เปิดใช้"}</button>
+                  <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:11.5 }} onClick={() => setConfirmDel(item)}>ลบ</button>
+                </div>
+              </div>
+            ))}
+            {equipment.filter(e => e.category === cat).length === 0 && (
+              <p style={{ color:C.faint, fontSize:13 }}>ยังไม่มีอุปกรณ์ในหมวดนี้</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {modal && <EquipmentFormModal item={modal.item} onSave={save} onClose={() => setModal(null)} />}
+
+      {confirmDel && (
+        <Modal title="ยืนยันการลบ" onClose={() => setConfirmDel(null)}>
+          <p style={{ margin:"0 0 20px", fontSize:14 }}>ต้องการลบ <strong>{confirmDel.name}</strong> ใช่หรือไม่?</p>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <button style={btnStyle("ghost")} onClick={() => setConfirmDel(null)}>ยกเลิก</button>
+            <button style={btnStyle("danger")} onClick={() => { remove(confirmDel.id); setConfirmDel(null); }}>ยืนยันลบ</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ═══ ADMIN — EQUIPMENT RESERVATIONS ═════════════════════════════════════════════ */
+function AdminEquipmentReservationsPage({ equipmentReservations, equipment, onCancel, onUpdateStatus }) {
+  const [tab, setTab] = useState("upcoming");
+  const filtered = equipmentReservations.filter(r => {
+    if (tab === "upcoming")  return r.date >= todayStr && r.status !== "cancelled";
+    if (tab === "past")      return r.date < todayStr;
+    if (tab === "cancelled") return r.status === "cancelled";
+    return true;
+  });
+
+  const groupedReservations = [];
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    if (a.equipmentId !== b.equipmentId) return a.equipmentId.localeCompare(b.equipmentId);
+    return a.timeSlot.localeCompare(b.timeSlot);
+  });
+
+  sorted.forEach(r => {
+    const last = groupedReservations[groupedReservations.length - 1];
+    if (last && last.date === r.date && last.equipmentId === r.equipmentId && last.studentName === r.studentName && last.status === r.status && last.purpose === r.purpose) {
+      const lastEndHour = last.timeSlot.split("-")[1];
+      const currentStartHour = r.timeSlot.split("-")[0];
+      if (lastEndHour === currentStartHour) {
+         last.timeSlot = last.timeSlot.split("-")[0] + "-" + r.timeSlot.split("-")[1];
+         last.ids.push(r.id);
+         return;
+      }
+    }
+    groupedReservations.push({ ...r, ids: [r.id] });
+  });
+
+  return (
+    <div>
+      <div style={{ marginBottom:28 }}>
+        <h2 style={{ margin:"0 0 4px", fontFamily:"'Cormorant Garamond',serif", fontSize:27, fontWeight:600 }}>การจองอุปกรณ์</h2>
+        <p style={{ margin:0, color:C.muted, fontSize:14 }}>IOS และดองเกิลทั้งหมด · {equipmentReservations.length} รายการ</p>
+      </div>
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {[["upcoming", "รอดำเนินการ"], ["past", "ผ่านมาแล้ว"], ["cancelled", "ยกเลิก"], ["all", "ทั้งหมด"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...btnStyle(tab === k ? "primary" : "ghost"), fontSize:13 }}>{l}</button>
+        ))}
+      </div>
+      <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+          <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
+            {["วันที่", "ช่วงเวลา", "อุปกรณ์", "นิสิต", "วัตถุประสงค์", "HN/เคส", "สถานะ", ""].map(h => (
+              <th key={h} style={{ textAlign:"left", padding:"10px 14px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase" }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {groupedReservations.length === 0 ? (
+              <tr><td colSpan={8} style={{ padding:"36px", textAlign:"center", color:C.muted }}>ไม่พบรายการจอง</td></tr>
+            ) : groupedReservations.sort((a, b) => b.date.localeCompare(a.date)).map(r => {
+              const eq = equipment.find(e => e.id === r.equipmentId);
+              return (
+                <tr key={r.ids.join(',')} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"9px 14px" }}>{displayDate(r.date)}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.timeSlot}</td>
+                  <td style={{ padding:"9px 14px", fontWeight:600 }}>{eq?.name || r.equipmentId}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.studentName}</td>
+                  <td style={{ padding:"9px 14px" }}>{r.purpose}</td>
+                  <td style={{ padding:"9px 14px", color:C.muted }}>{r.caseHn || "—"}</td>
+                  <td style={{ padding:"9px 14px" }}><Badge t={r.status}>{r.status === "cancelled" ? "ยกเลิก" : r.status === "returned" ? "รับคืนแล้ว" : "จอง/ใช้งาน"}</Badge></td>
+                  <td style={{ padding:"9px 14px" }}>
+                    <div style={{ display:"flex", gap:4 }}>
+                      {r.status === "confirmed" && (
+                        <button style={{ ...btnStyle("primary"), padding:"5px 10px", fontSize:12 }} onClick={() => onUpdateStatus(r.ids, "returned")}>รับคืน</button>
+                      )}
+                      {r.status !== "cancelled" && (
+                        <button style={{ ...btnStyle("danger"), padding:"5px 10px", fontSize:12 }} onClick={() => onCancel(r.ids)}>ยกเลิก</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 /* ═══ DAY SUMMARY PANEL (student view-only) ═══════════════════════════════════════
    Shows a compact, always-visible table of all bookings for the selected date+session.
    No clicks required — replaces the "click unit to see info" pattern.               */
@@ -668,7 +1156,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
 
   const bookings    = (uid) => reservations.filter(r=>r.date===date&&r.session===session&&r.unitId===uid&&r.status!=="cancelled");
   const activeUnits = units.filter(u=>u.status==="active"&&!u.overflow);
-  const totalBooked = activeUnits.filter(u=>bookings(u.id).length>0).length;
+  
 
   /* For each zone, compute how many overflow units to show.
      Rule: show overflow unit N once all N-1 overflow units before it are booked
@@ -777,7 +1265,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
       {sessions.includes(session) ? [0,1,2].map(z=>{
         const zUnits = visibleUnitsForZone(z);
         const adv    = advisors.find(a=>a.id===advIds[z]);
-        const regularCount  = units.filter(u=>u.zoneIdx===z&&!u.overflow&&u.status==="active").length;
+        
         const overflowShown = zUnits.filter(u=>u.overflow).length;
         return (
           <div key={z} style={{ marginBottom:24 }}>
@@ -1725,7 +2213,7 @@ function UserFormModal({ modal, onSave, onClose }) {
   const [password, setPass]     = useState(item?.password  || "");
   const [program, setProgram]   = useState(item?.program   || "MSc");
   const [enrollYear, setEnrollYear] = useState(item?.enrollYear || new Date().getFullYear());
-  const [zone, setZone]         = useState(item?.zone      || "A");
+  
   const [defaultZone, setDefZ]  = useState(item?.defaultZone || "A");
   const [err, setErr]           = useState("");
 
@@ -1794,6 +2282,103 @@ function AdminManageUsersPage({ students, setStudents, advisors, setAdvisors, no
   const [tab, setTab]           = useState("students");
   const [modal, setModal]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // {type:"student"|"advisor", id, name}
+  const [sortCol,  setSortCol]  = useState("id");
+  const [sortAsc,  setSortAsc]  = useState(true);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (items) => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`ยืนยันการลบ ${selectedIds.size} รายการที่เลือก?`)) return;
+
+    const ids = Array.from(selectedIds);
+    if (tab === "students") {
+      const prevStudents = [...students];
+      setStudents(p => p.filter(s => !ids.includes(s.id)));
+      notify("กำลังลบนิสิตที่เลือก (บันทึกพื้นหลัง)");
+      try {
+        await SheetsDB.batchDeactivateUsers(ids, []);
+        notify(`✓ ลบนิสิต ${ids.length} รายการเสร็จสมบูรณ์`);
+      } catch (error) {
+        setStudents(prevStudents);
+        notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+      }
+    } else {
+      const prevAdvisors = [...advisors];
+      setAdvisors(p => p.filter(a => !ids.includes(a.id)));
+      notify("กำลังลบอาจารย์ที่เลือก (บันทึกพื้นหลัง)");
+      try {
+        await SheetsDB.batchDeactivateUsers([], ids);
+        notify(`✓ ลบอาจารย์ ${ids.length} รายการเสร็จสมบูรณ์`);
+      } catch (error) {
+        setAdvisors(prevAdvisors);
+        notify(`⚠ ลบไม่สำเร็จ: ${error.message}`, true);
+      }
+    }
+    setSelectedIds(new Set());
+  };
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortAsc(a => !a);
+    else { setSortCol(col); setSortAsc(true); }
+  }
+
+  const renderSortIcon = (col) => (
+    <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
+      {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
+    </span>
+  );
+
+  const sortedStudents = [...students].sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (!va) va = "";
+    if (!vb) vb = "";
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const sortedAdvisors = [...advisors].sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (!va) va = "";
+    if (!vb) vb = "";
+    const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  const studentCols = [
+    { k: "id", l: "ID" },
+    { k: "name", l: "ชื่อ" },
+    { k: "username", l: "ชื่อผู้ใช้" },
+    { k: "password", l: "รหัสผ่าน" },
+    { k: "program", l: "โปรแกรม" },
+    { k: "enrollYear", l: "ชั้นปี" },
+    { k: "", l: "" }
+  ];
+
+  const advisorCols = [
+    { k: "id", l: "ID" },
+    { k: "name", l: "ชื่อ" },
+    { k: "username", l: "ชื่อผู้ใช้" },
+    { k: "password", l: "รหัสผ่าน" },
+    { k: "defaultZone", l: "โซนหลัก" },
+    { k: "schedule", l: "ตารางประจำ" },
+    { k: "", l: "" }
+  ];
 
 const handleSave = async (data) => {
     const prevStudents = [...students];
@@ -1877,6 +2462,74 @@ try {
     }
   };
 
+  const fileInputRef = useRef(null);
+
+  const handleImportExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        
+        let maxIdNum = students.map(s => parseInt(s.id.replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
+        let nextId = maxIdNum.length ? Math.max(...maxIdNum) + 1 : 6001;
+        
+        const newStudents = [];
+        for (const row of json) {
+          if (!row["ชื่อ"] && !row["name"] && !row["Name"]) continue;
+          
+          let id = String(row["ID"] || row["id"] || "");
+          if (!id) {
+            id = `D${nextId}`;
+            nextId++;
+          }
+          
+          newStudents.push({
+            id: id.trim(),
+            name: row["ชื่อ"] || row["name"] || row["Name"] || "",
+            username: String(row["ชื่อผู้ใช้"] || row["username"] || row["Username"] || id),
+            password: String(row["รหัสผ่าน"] || row["password"] || row["Password"] || "1234"),
+            program: row["โปรแกรม"] || row["program"] || row["Program"] || "MSc",
+            enrollYear: Number(row["ชั้นปี"] || row["enrollYear"] || row["year"] || new Date().getFullYear()),
+            active: true
+          });
+        }
+        
+        if (newStudents.length === 0) {
+          notify("⚠ ไม่พบข้อมูลนิสิตในไฟล์ หรือรูปแบบไม่ถูกต้อง", true);
+          return;
+        }
+
+        if (!window.confirm(`พบข้อมูลนิสิต ${newStudents.length} คน ยืนยันการนำเข้า?`)) {
+          e.target.value = "";
+          return;
+        }
+
+        const prevStudents = [...students];
+        notify(`กำลังนำเข้านิสิต ${newStudents.length} คน (บันทึกพื้นหลัง)`);
+        setStudents(p => [...p, ...newStudents]);
+        
+        try {
+          await SheetsDB.batchAppendStudents(newStudents);
+          notify(`✓ นำเข้านิสิตสำเร็จสมบูรณ์`);
+        } catch(error) {
+          setStudents(prevStudents);
+          notify(`⚠ นำเข้าไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
+        }
+        
+      } catch (err) {
+        notify("⚠ เกิดข้อผิดพลาดในการอ่านไฟล์", true);
+      }
+      e.target.value = "";
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div>
       <div style={{ marginBottom:28 }}>
@@ -1885,24 +2538,48 @@ try {
       </div>
       <div style={{ display:"flex", gap:8, marginBottom:20 }}>
         {[["students",`นิสิต (${students.length} คน)`],["advisors",`อาจารย์ (${advisors.length} คน)`]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)} style={{ ...btnStyle(tab===k?"primary":"ghost"), fontSize:13 }}>{l}</button>
+          <button key={k} onClick={()=>{ setTab(k); setSelectedIds(new Set()); }} style={{ ...btnStyle(tab===k?"primary":"ghost"), fontSize:13 }}>{l}</button>
         ))}
-        <button style={{ ...btnStyle("ghost"), marginLeft:"auto", fontSize:13 }} onClick={()=>setModal({type:tab==="students"?"student":"advisor",item:null})}>
-          + เพิ่ม {tab==="students"?"นิสิต":"อาจารย์"}
-        </button>
+        {selectedIds.size > 0 && (
+          <button style={{ ...btnStyle("danger"), marginLeft:16, fontSize:13 }} onClick={handleBulkDelete}>
+            ลบที่เลือก ({selectedIds.size})
+          </button>
+        )}
+        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+          {tab === "students" && (
+            <>
+              <input type="file" accept=".xlsx" style={{ display: "none" }} ref={fileInputRef} onChange={handleImportExcel} />
+              <button style={{ ...btnStyle("ghost"), fontSize:13 }} onClick={() => fileInputRef.current?.click()}>
+                นำเข้าจาก Excel
+              </button>
+            </>
+          )}
+          <button style={{ ...btnStyle("ghost"), fontSize:13 }} onClick={()=>setModal({type:tab==="students"?"student":"advisor",item:null})}>
+            + เพิ่ม {tab==="students"?"นิสิต":"อาจารย์"}
+          </button>
+        </div>
       </div>
 
       {tab==="students"&&(
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โปรแกรม","ชั้นปี",""].map(h=>(
-                <th key={h} style={{ textAlign:"left", padding:"10px 16px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
+              <th style={{ padding:"10px 16px", width:30 }}>
+                <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === sortedStudents.length} onChange={() => toggleSelectAll(sortedStudents)} />
+              </th>
+              {studentCols.map(h=>(
+                <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
+                  {h.l}
+                  {h.k && <SortIcon col={h.k} />}
+                </th>
               ))}
             </tr></thead>
             <tbody>
-              {students.map(s=>(
+              {sortedStudents.map(s=>(
                 <tr key={s.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"11px 16px" }}>
+                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} />
+                  </td>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{s.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{s.name}</td>
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{s.username}</td>
@@ -1945,13 +2622,22 @@ try {
         <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
             <thead><tr style={{ background:C.soft, borderBottom:`1px solid ${C.line}` }}>
-              {["ID","ชื่อ","ชื่อผู้ใช้","รหัสผ่าน","โซนหลัก","ตารางประจำ",""].map(h=>(
-                <th key={h} style={{ textAlign:"left", padding:"10px 16px", color:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4 }}>{h}</th>
+              <th style={{ padding:"10px 16px", width:30 }}>
+                <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === sortedAdvisors.length} onChange={() => toggleSelectAll(sortedAdvisors)} />
+              </th>
+              {advisorCols.map(h=>(
+                <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
+                  {h.l}
+                  {h.k && <SortIcon col={h.k} />}
+                </th>
               ))}
             </tr></thead>
             <tbody>
-              {advisors.map(a=>(
+              {sortedAdvisors.map(a=>(
                 <tr key={a.id} style={{ borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{ padding:"11px 16px" }}>
+                    <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)} />
+                  </td>
                   <td style={{ padding:"11px 16px", color:C.muted, fontSize:13 }}>{a.id}</td>
                   <td style={{ padding:"11px 16px", fontWeight:500 }}>{a.name}</td>
                   <td style={{ padding:"11px 16px", fontFamily:"monospace", fontSize:13 }}>{a.username}</td>
@@ -2303,7 +2989,7 @@ function AdminStudentSummaryPage({ reservations, students }) {
 
   const presetLabel = presets.find(p => p.k === preset)?.l || "กำหนดเอง";
 
-  const SortIcon = ({ col }) => (
+  const renderSortIcon = (col) => (
     <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
       {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
     </span>
@@ -2396,25 +3082,25 @@ function AdminStudentSummaryPage({ reservations, students }) {
               <tr>
                 <th style={{ ...thStyle("name"), textAlign:"left", width:40, paddingLeft:18 }}>#</th>
                 <th style={{ ...thStyle("name"), textAlign:"left" }} onClick={() => toggleSort("name")}>
-                  ชื่อนิสิต <SortIcon col="name" />
+                  ชื่อนิสิต {renderSortIcon("name")}
                 </th>
                 <th style={{ ...thStyle("id"), textAlign:"left" }} onClick={() => toggleSort("id")}>
-                  รหัส <SortIcon col="id" />
+                  รหัส {renderSortIcon("id")}
                 </th>
                 <th style={{ ...thStyle("program"), textAlign:"left" }} onClick={() => toggleSort("program")}>
-                  หลักสูตร <SortIcon col="program" />
+                  หลักสูตร {renderSortIcon("program")}
                 </th>
                 <th style={thStyle("total")} onClick={() => toggleSort("total")}>
-                  จองทั้งหมด <SortIcon col="total" />
+                  จองทั้งหมด {renderSortIcon("total")}
                 </th>
                 <th style={{ ...thStyle("ghost"), color: sortCol === "ghost" ? "#7c3aed" : C.muted }} onClick={() => toggleSort("ghost")}>
-                  ผี 👻 <SortIcon col="ghost" />
+                  ผี 👻 {renderSortIcon("ghost")}
                 </th>
                 <th style={thStyle("normal")} onClick={() => toggleSort("normal")}>
-                  ปกติ <SortIcon col="normal" />
+                  ปกติ {renderSortIcon("normal")}
                 </th>
                 <th style={{ ...thStyle("adminAdded"), color: sortCol === "adminAdded" ? "#92400e" : C.muted }} onClick={() => toggleSort("adminAdded")}>
-                  แอดมินเพิ่ม 🔑 <SortIcon col="adminAdded" />
+                  แอดมินเพิ่ม 🔑 {renderSortIcon("adminAdded")}
                 </th>
               </tr>
             </thead>
@@ -2830,7 +3516,7 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
           <div style={{ padding:"12px 16px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
             <span style={{ fontSize:12, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:0.5 }}>วันในสัปดาห์</span>
           </div>
-          {DAYS.map(({ dow, label, short, sessions:dowSessions }) => {
+          {DAYS.map(({ dow, label, sessions:dowSessions }) => {
             const isActive = selectedDow === dow;
             // Count how many slots are set for this dow
             const setCount = dowSessions.reduce((n, sess) => {
@@ -2994,52 +3680,208 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
 /* ═══ SIDEBAR ════════════════════════════════════════════════════════════════════ */
 function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword }) {
   const [showPwModal, setShowPwModal] = useState(false);
-  const nav = user.role==="student"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"overview",i:"◎",l:"ภาพรวมยูนิต"},{k:"my-res",i:"📋",l:"การจองของฉัน"}]
-    : user.role==="advisor"
-    ? [{k:"browse",i:"⊞",l:"จองยูนิต"},{k:"my-res",i:"📋",l:"การจอง"}]
-    : [{k:"admin-overview",i:"◎",l:"ภาพรวม"},{k:"admin-session-advisors",i:"👨‍⚕️",l:"อาจารย์นิเทศ"},{k:"admin-monthly-lineup",i:"📅",l:"ตารางเวร"},{k:"admin-users",i:"👥",l:"จัดการผู้ใช้"},{k:"admin-units",i:"⊞",l:"จัดการยูนิต"},{k:"admin-res",i:"📋",l:"การจองทั้งหมด"},{k:"admin-summary",i:"📊",l:"สรุปรายนิสิต"}];
+
+  const nav = user.role === "student"
+    ? [
+        { k: "browse", i: "⊞", l: "จองยูนิต" },
+        { k: "overview", i: "◎", l: "ภาพรวมยูนิต" },
+        { k: "equip-browse", i: "🔬", l: "จองอุปกรณ์" },
+        { k: "my-res", i: "📋", l: "การจองของฉัน" }
+      ]
+    : user.role === "advisor"
+    ? [
+        { k: "browse", i: "⊞", l: "จองยูนิต" },
+        { k: "equip-browse", i: "🔬", l: "จองอุปกรณ์" },
+        { k: "my-res", i: "📋", l: "การจอง" }
+      ]
+    : [
+        { k: "admin-overview", i: "◎", l: "ภาพรวม" },
+        { k: "admin-summary", i: "📊", l: "สรุปรายนิสิต" },
+        { isHeader: true, l: "ยูนิต (Units)" },
+        { k: "admin-units", i: "⊞", l: "จัดการยูนิต" },
+        { k: "admin-res", i: "📋", l: "การจองยูนิต" },
+        { isHeader: true, l: "อุปกรณ์ (Equipment)" },
+        { k: "admin-equipment", i: "🔬", l: "จัดการอุปกรณ์" },
+        { k: "admin-equip-res", i: "📋", l: "การจองอุปกรณ์" },
+        { isHeader: true, l: "ระบบและบุคลากร" },
+        { k: "admin-session-advisors", i: "👨‍⚕️", l: "อาจารย์นิเทศ" },
+        { k: "admin-monthly-lineup", i: "📅", l: "ตารางเวร" },
+        { k: "admin-users", i: "👥", l: "จัดการผู้ใช้" }
+      ];
+
   return (
-    <aside style={{ width:235, background:C.ink, minHeight:"100vh", display:"flex", flexDirection:"column", flexShrink:0 }}>
-      <div style={{ padding:"24px 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:22 }}>🦷</span>
-          <span style={{ fontFamily:"'Cormorant Garamond',serif", color:"#fff", fontSize:22, fontWeight:600 }}>CUProstho</span>
+    <aside
+      style={{
+        width: 235,
+        background: C.ink,
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0
+      }}
+    >
+      <div
+        style={{
+          padding: "24px 20px 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.07)"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>🦷</span>
+          <span
+            style={{
+              fontFamily: "'Cormorant Garamond',serif",
+              color: "#fff",
+              fontSize: 22,
+              fontWeight: 600
+            }}
+          >
+            CUProstho
+          </span>
         </div>
-        <p style={{ margin:"5px 0 0", fontSize:10.5, color:"rgba(255,255,255,0.25)", letterSpacing:0.7, textTransform:"uppercase" }}>คณะทันตแพทยศาสตร์</p>
+
+        <p
+          style={{
+            margin: "5px 0 0",
+            fontSize: 10.5,
+            color: "rgba(255,255,255,0.25)",
+            letterSpacing: 0.7,
+            textTransform: "uppercase"
+          }}
+        >
+          คณะทันตแพทยศาสตร์
+        </p>
       </div>
-      <nav style={{ padding:"14px 10px", flex:1 }}>
-        {nav.map(x=>(
-          <button key={x.k} onClick={()=>setPage(x.k)} style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"9px 12px", borderRadius:8, border:"none", cursor:"pointer", fontFamily:"'Sarabun','Outfit',sans-serif", fontSize:13.5, fontWeight:page===x.k?500:400, background:page===x.k?"rgba(255,255,255,0.1)":"transparent", color:page===x.k?"#fff":"rgba(255,255,255,0.4)", transition:"all .15s", marginBottom:2, textAlign:"left" }}>
-            <span style={{ fontSize:14 }}>{x.i}</span>{x.l}
-          </button>
-        ))}
+
+      <nav style={{ padding: "14px 10px", flex: 1, overflowY: "auto" }}>
+        {nav.map((x, idx) => 
+          x.isHeader ? (
+            <div key={`header-${idx}`} style={{ padding: "18px 12px 6px", fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 0.5, textTransform: "uppercase", fontWeight: 500 }}>
+              {x.l}
+            </div>
+          ) : (
+            <button
+              key={x.k}
+              onClick={() => setPage(x.k)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "9px 12px",
+                borderRadius: 8,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "'Sarabun','Outfit',sans-serif",
+                fontSize: 13.5,
+                fontWeight: page === x.k ? 500 : 400,
+                background:
+                  page === x.k
+                    ? "rgba(255,255,255,0.1)"
+                    : "transparent",
+                color:
+                  page === x.k
+                    ? "#fff"
+                    : "rgba(255,255,255,0.4)",
+                transition: "all .15s",
+                marginBottom: 2,
+                textAlign: "left"
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{x.i}</span>
+              {x.l}
+            </button>
+          )
+        )}
       </nav>
-      <div style={{ padding:"14px 20px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
-        <p style={{ margin:"0 0 1px", fontSize:13.5, fontWeight:500, color:"#fff" }}>{user.name}</p>
-        <p style={{ margin:"0 0 12px", fontSize:12, color:"rgba(255,255,255,0.3)" }}>
-          {user.role==="admin"?"ผู้ดูแลระบบ":user.role==="advisor"?"อาจารย์นิเทศ":PROGRAM_LABELS[user.program]||user.program}
-          {user.role==="student" && user.enrollYear && (
-            <span style={{ display:"block", marginTop:2 }}>
+
+      <div
+        style={{
+          padding: "14px 20px 20px",
+          borderTop: "1px solid rgba(255,255,255,0.07)"
+        }}
+      >
+        <p
+          style={{
+            margin: "0 0 1px",
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: "#fff"
+          }}
+        >
+          {user.name}
+        </p>
+
+        <p
+          style={{
+            margin: "0 0 12px",
+            fontSize: 12,
+            color: "rgba(255,255,255,0.3)"
+          }}
+        >
+          {user.role === "admin"
+            ? "ผู้ดูแลระบบ"
+            : user.role === "advisor"
+            ? "อาจารย์นิเทศ"
+            : PROGRAM_LABELS[user.program] || user.program}
+
+          {user.role === "student" && user.enrollYear && (
+            <span style={{ display: "block", marginTop: 2 }}>
               ชั้นปีที่ {getClassYear(user.enrollYear)} · รุ่น {user.enrollYear}
             </span>
           )}
         </p>
-        <button onClick={onRefresh} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.9)", border:"1px solid rgba(255,255,255,0.2)", fontSize:12.5, marginBottom:8 }}>
+
+        <button
+          onClick={onRefresh}
+          style={{
+            ...btnStyle("ghost"),
+            width: "100%",
+            color: "rgba(255,255,255,0.9)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            fontSize: 12.5,
+            marginBottom: 8
+          }}
+        >
           ↻ รีเฟรชข้อมูล
         </button>
-        {(user.role==="student"||user.role==="advisor") && (
-          <button onClick={()=>setShowPwModal(true)} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.7)", border:"1px solid rgba(255,255,255,0.15)", fontSize:12.5, marginBottom:8 }}>
+
+        {(user.role === "student" || user.role === "advisor") && (
+          <button
+            onClick={() => setShowPwModal(true)}
+            style={{
+              ...btnStyle("ghost"),
+              width: "100%",
+              color: "rgba(255,255,255,0.7)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              fontSize: 12.5,
+              marginBottom: 8
+            }}
+          >
             🔑 เปลี่ยนรหัสผ่าน
           </button>
         )}
-        <button onClick={onLogout} style={{ ...btnStyle("ghost"), width:"100%", color:"rgba(255,255,255,0.35)", border:"1px solid rgba(255,255,255,0.1)", fontSize:12.5 }}>ออกจากระบบ</button>
+
+        <button
+          onClick={onLogout}
+          style={{
+            ...btnStyle("ghost"),
+            width: "100%",
+            color: "rgba(255,255,255,0.35)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: 12.5
+          }}
+        >
+          ออกจากระบบ
+        </button>
       </div>
+
       {showPwModal && (
         <ChangePasswordModal
           user={user}
           onSave={onChangePassword}
-          onClose={()=>setShowPwModal(false)} />
+          onClose={() => setShowPwModal(false)}
+        />
       )}
     </aside>
   );
@@ -3060,6 +3902,8 @@ export default function App() {
   const [reservations, setReservations]   = useState([]);
   const [sessionAdvisors, setSessAdvs]    = useState(()=>buildSessionAdvisors(SEED_ADVISORS, {}));
   const [monthlyLineups, setMonthlyLineups] = useState({});
+  const [equipment, setEquipment]                     = useState(SEED_EQUIPMENT);
+  const [equipmentReservations, setEquipmentReservations] = useState([]);
   const [toast, setToast]                 = useState(null);
   // Prevents duplicate concurrent syncAll calls (which cause GAS LockService to block for 30s)
   const syncInFlight = useRef(false);
@@ -3111,7 +3955,8 @@ export default function App() {
     });
 
     setUnits(finalUnits);
-
+setEquipment(data.equipment && data.equipment.length ? data.equipment : SEED_EQUIPMENT);
+    setEquipmentReservations(data.equipmentReservations || []);
     // ... rest of the function (auto-archive, etc.)
 
       // ── Auto-archive reservations older than 18 months ────────────────────
@@ -3241,7 +4086,67 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
       notify(`⚠ ยกเลิกไม่สำเร็จ ระบบคืนค่าเดิม: ${error.message}`, true);
     }
   };
+const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purpose, caseHn }) => {
+    const startIndex = EQUIP_TIME_SLOTS.indexOf(timeSlot);
+    const slotsToBook = [];
+    for(let i = 0; i < duration; i++) {
+        slotsToBook.push(EQUIP_TIME_SLOTS[startIndex + i]);
+    }
 
+    let currentRes = [...equipmentReservations];
+    const newReservations = [];
+    for(const slot of slotsToBook) {
+        const id = generateId("equipmentReservation", currentRes);
+        const res = {
+          id,
+          studentId: user.id, studentName: user.name,
+          equipmentId: eq.id, date, timeSlot: slot, purpose, caseHn: caseHn || "",
+          status: "confirmed", createdAt: todayStr,
+        };
+        newReservations.push(res);
+        currentRes.push(res);
+    }
+
+    setEquipmentReservations(currentRes);
+    notify(`จอง ${eq.name} สำเร็จ ${duration} ชั่วโมง — ${displayDate(date)}`);
+    
+    try {
+      for(const res of newReservations) {
+        await SheetsDB.writeEquipmentReservation(res);
+      }
+      notify(`✓ บันทึกการจอง ${eq.name} ลงฐานข้อมูลเสร็จสมบูรณ์`);
+    } catch (error) {
+      setEquipmentReservations(p => p.filter(r => !newReservations.find(nr => nr.id === r.id)));
+      notify(`⚠ การเชื่อมต่อขัดข้อง! ยกเลิกการจอง ${eq.name} แล้ว: ${error.message}`, true);
+    }
+  };
+
+  const cancelEquipmentBooking = async (idOrIds) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    const prev = [...equipmentReservations];
+    setEquipmentReservations(p => p.map(r => ids.includes(r.id) ? { ...r, status: "cancelled" } : r));
+    notify("ยกเลิกการจองอุปกรณ์เรียบร้อยแล้ว");
+    try {
+      await Promise.all(ids.map(id => SheetsDB.updateEquipmentReservationStatus(id, "cancelled")));
+    } catch (error) {
+      setEquipmentReservations(prev);
+      notify(`⚠ ยกเลิกไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
+  const updateEquipmentResStatus = async (idOrIds, status) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    const prev = [...equipmentReservations];
+    setEquipmentReservations(p => p.map(r => ids.includes(r.id) ? { ...r, status } : r));
+    const label = status === "returned" ? "รับคืนอุปกรณ์" : "อัปเดตสถานะ";
+    notify(`${label}เรียบร้อยแล้ว`);
+    try {
+      await Promise.all(ids.map(id => SheetsDB.updateEquipmentReservationStatus(id, status)));
+    } catch (error) {
+      setEquipmentReservations(prev);
+      notify(`⚠ ทำรายการไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
   const updateStatus = async (id, status) => { 
     const previousState = [...reservations];
     setReservations(p=>p.map(r=>r.id===id?{...r,status}:r)); 
@@ -3295,6 +4200,9 @@ const book = async ({ unit, date, session, patientName, hn, treatment, overbooke
         {page==="overview"          && <BrowsePage reservations={reservations} user={{...user, role:"overview"}} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} onBook={book} />}
         {page==="my-res"            && <MyReservationsPage reservations={reservations} user={user} units={units} sessionAdvisors={sessionAdvisors} advisors={advisors} onCancel={cancel} onEdit={editReservation} />}
         {page==="admin-overview"    && <AdminOverview reservations={reservations} units={units} advisors={advisors} sessionAdvisors={sessionAdvisors} />}
+        {page==="equip-browse"     && <EquipmentBrowsePage equipment={equipment} equipmentReservations={equipmentReservations} user={user} onBook={bookEquipment} onCancel={cancelEquipmentBooking} />}
+        {page==="admin-equipment"  && <AdminEquipmentPage equipment={equipment} setEquipment={setEquipment} notify={notify} />}
+        {page==="admin-equip-res"  && <AdminEquipmentReservationsPage equipmentReservations={equipmentReservations} equipment={equipment} onCancel={cancelEquipmentBooking} onUpdateStatus={updateEquipmentResStatus} />}
         {page==="admin-session-advisors" && <AdminSessionAdvisorsPage advisors={advisors} setAdvisors={setAdvisors} sessionAdvisors={sessionAdvisors} setSessionAdvisors={setSessAdvs} monthlyLineups={monthlyLineups} notify={notify} />}
         {page==="admin-monthly-lineup"   &&
           <AdminMonthlyLineupPage

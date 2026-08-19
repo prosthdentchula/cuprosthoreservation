@@ -158,6 +158,33 @@ export function parseMonthlyLineups(rows) {
   return result;
 }
 
+export function parseEquipment(rows) {
+  return rows.slice(1).filter((r) => r[0]).map((r) => ({
+    id:           r[0],
+    category:     r[1] || "ios",
+    name:         r[2] || "",
+    brand:        r[3] || "",
+    subtype:      r[4] || "",
+    serialNumber: r[5] || "",
+    status:       r[6] || "active",
+  })).filter((e) => e.status !== "removed");
+}
+
+export function parseEquipmentReservations(rows) {
+  return rows.slice(1).filter((r) => r[0]).map((r) => ({
+    id:          r[0],
+    studentId:   r[1] || "",
+    studentName: r[2] || "",
+    equipmentId: r[3] || "",
+    date:        r[4] || "",
+    timeSlot:    r[5] || "",
+    purpose:     r[6] || "",
+    caseHn:      r[7] || "",
+    status:      r[8] || "confirmed",
+    createdAt:   r[9] || "",
+  }));
+}
+
 // ── High-level SheetsDB API ───────────────────────────────────────────────────
 export const SheetsDB = {
 
@@ -177,6 +204,8 @@ async syncAll() {
         reservations:    parseReservations(j.data.reservations),
         admins:          parseAdmins(j.data.admins),
         monthlyLineups:  parseMonthlyLineups(j.data.monthlyLineups || []),
+        equipment:             parseEquipment(j.data.equipment || []),
+        equipmentReservations: parseEquipmentReservations(j.data.equipmentReservations || []),
       };
     } catch (err) {
       lastErr = err;
@@ -270,6 +299,14 @@ async syncAll() {
     return apiAppend("Advisors!A:G", [row]);
   },
 
+  async batchDeactivateUsers(studentIds, advisorIds) {
+    return gasPost({ action: "batchDeactivateUsers", studentIds, advisorIds });
+  },
+
+  async batchUpdateStatus(sheetName, ids, statusColIdx, newValue) {
+    return gasPost({ action: "batchUpdateStatus", sheetName, ids, statusColIdx, newValue });
+  },
+
   async updateStudent(student) {
     const rows = await apiGet("Students!A:A");
     const rowIdx = rows.findIndex((r) => r[0] === student.id);
@@ -288,6 +325,42 @@ async syncAll() {
     const rowIdx = rows.findIndex((r) => Number(r[0]) === unitId);
     if (rowIdx === -1) throw new Error(`Unit ${unitId} not found`);
     await apiPut(`Units!E${rowIdx + 1}`, [[newStatus]]);
+  },
+
+  async writeEquipmentReservation(res) {
+    const row = [
+      res.id, res.studentId, res.studentName, res.equipmentId,
+      res.date, res.timeSlot, res.purpose, res.caseHn || "",
+      res.status, res.createdAt,
+    ];
+    return apiAppend("EquipmentReservations!A:J", [row]);
+  },
+
+  async updateEquipmentReservationStatus(id, newStatus) {
+    const rows = await apiGet("EquipmentReservations!A:A");
+    const idx = rows.findIndex((r) => r[0] === id);
+    if (idx === -1) throw new Error(`Equipment reservation ${id} not found`);
+    await apiPut(`EquipmentReservations!I${idx + 1}`, [[newStatus]]);
+  },
+
+  async appendEquipment(eq) {
+    const row = [eq.id, eq.category, eq.name, eq.brand, eq.subtype || "", eq.serialNumber || "", "active"];
+    return apiAppend("Equipment!A:G", [row]);
+  },
+
+  async updateEquipment(eq) {
+    const rows = await apiGet("Equipment!A:A");
+    const idx = rows.findIndex((r) => r[0] === eq.id);
+    if (idx === -1) throw new Error(`Equipment ${eq.id} not found`);
+    const row = [eq.id, eq.category, eq.name, eq.brand, eq.subtype || "", eq.serialNumber || "", eq.status || "active"];
+    await apiPut(`Equipment!A${idx + 1}:G${idx + 1}`, [row]);
+  },
+
+  async saveEquipmentStatus(id, status) {
+    const rows = await apiGet("Equipment!A:A");
+    const idx = rows.findIndex((r) => r[0] === id);
+    if (idx === -1) throw new Error(`Equipment ${id} not found`);
+    await apiPut(`Equipment!G${idx + 1}`, [[status]]);
   },
 
   async saveMonthlyLineup(monthKey, dow, morningIds, afternoonIds) {
