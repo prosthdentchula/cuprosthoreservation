@@ -21,9 +21,9 @@ document.head.appendChild(fontLink);
    Stores the logged-in user in sessionStorage so a reload doesn't log them out.
    sessionStorage is cleared automatically when the browser tab is closed.      */
 const SESSION_KEY = "cuprostho_session";
-function saveSession(u)    { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch(_){} }
-function loadSession()     { try { const s = sessionStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null; } catch(_){ return null; } }
-function clearSession()    { try { sessionStorage.removeItem(SESSION_KEY); } catch(_){} }
+function saveSession(u)    { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch{} }
+function loadSession()     { try { const s = sessionStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null; } catch{ return null; } }
+function clearSession()    { try { sessionStorage.removeItem(SESSION_KEY); } catch{} }
 
 /* ═══ SEED DATA  (initial state before first Sheets sync) ═══════════════════════
    dow: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
@@ -1156,7 +1156,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
 
   const bookings    = (uid) => reservations.filter(r=>r.date===date&&r.session===session&&r.unitId===uid&&r.status!=="cancelled");
   const activeUnits = units.filter(u=>u.status==="active"&&!u.overflow);
-  const totalBooked = activeUnits.filter(u=>bookings(u.id).length>0).length;
+  
 
   /* For each zone, compute how many overflow units to show.
      Rule: show overflow unit N once all N-1 overflow units before it are booked
@@ -1265,7 +1265,7 @@ function BrowsePage({ reservations, user, units, advisors, sessionAdvisors, onBo
       {sessions.includes(session) ? [0,1,2].map(z=>{
         const zUnits = visibleUnitsForZone(z);
         const adv    = advisors.find(a=>a.id===advIds[z]);
-        const regularCount  = units.filter(u=>u.zoneIdx===z&&!u.overflow&&u.status==="active").length;
+        
         const overflowShown = zUnits.filter(u=>u.overflow).length;
         return (
           <div key={z} style={{ marginBottom:24 }}>
@@ -2213,7 +2213,7 @@ function UserFormModal({ modal, onSave, onClose }) {
   const [password, setPass]     = useState(item?.password  || "");
   const [program, setProgram]   = useState(item?.program   || "MSc");
   const [enrollYear, setEnrollYear] = useState(item?.enrollYear || new Date().getFullYear());
-  const [zone, setZone]         = useState(item?.zone      || "A");
+  
   const [defaultZone, setDefZ]  = useState(item?.defaultZone || "A");
   const [err, setErr]           = useState("");
 
@@ -2338,7 +2338,7 @@ function AdminManageUsersPage({ students, setStudents, advisors, setAdvisors, no
     else { setSortCol(col); setSortAsc(true); }
   }
 
-  const SortIcon = ({ col }) => (
+  const renderSortIcon = (col) => (
     <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
       {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
     </span>
@@ -2989,7 +2989,7 @@ function AdminStudentSummaryPage({ reservations, students }) {
 
   const presetLabel = presets.find(p => p.k === preset)?.l || "กำหนดเอง";
 
-  const SortIcon = ({ col }) => (
+  const renderSortIcon = (col) => (
     <span style={{ marginLeft:4, opacity: sortCol === col ? 1 : 0.25, fontSize:10 }}>
       {sortCol === col ? (sortAsc ? "▲" : "▼") : "▼"}
     </span>
@@ -3082,25 +3082,25 @@ function AdminStudentSummaryPage({ reservations, students }) {
               <tr>
                 <th style={{ ...thStyle("name"), textAlign:"left", width:40, paddingLeft:18 }}>#</th>
                 <th style={{ ...thStyle("name"), textAlign:"left" }} onClick={() => toggleSort("name")}>
-                  ชื่อนิสิต <SortIcon col="name" />
+                  ชื่อนิสิต {renderSortIcon("name")}
                 </th>
                 <th style={{ ...thStyle("id"), textAlign:"left" }} onClick={() => toggleSort("id")}>
-                  รหัส <SortIcon col="id" />
+                  รหัส {renderSortIcon("id")}
                 </th>
                 <th style={{ ...thStyle("program"), textAlign:"left" }} onClick={() => toggleSort("program")}>
-                  หลักสูตร <SortIcon col="program" />
+                  หลักสูตร {renderSortIcon("program")}
                 </th>
                 <th style={thStyle("total")} onClick={() => toggleSort("total")}>
-                  จองทั้งหมด <SortIcon col="total" />
+                  จองทั้งหมด {renderSortIcon("total")}
                 </th>
                 <th style={{ ...thStyle("ghost"), color: sortCol === "ghost" ? "#7c3aed" : C.muted }} onClick={() => toggleSort("ghost")}>
-                  ผี 👻 <SortIcon col="ghost" />
+                  ผี 👻 {renderSortIcon("ghost")}
                 </th>
                 <th style={thStyle("normal")} onClick={() => toggleSort("normal")}>
-                  ปกติ <SortIcon col="normal" />
+                  ปกติ {renderSortIcon("normal")}
                 </th>
                 <th style={{ ...thStyle("adminAdded"), color: sortCol === "adminAdded" ? "#92400e" : C.muted }} onClick={() => toggleSort("adminAdded")}>
-                  แอดมินเพิ่ม 🔑 <SortIcon col="adminAdded" />
+                  แอดมินเพิ่ม 🔑 {renderSortIcon("adminAdded")}
                 </th>
               </tr>
             </thead>
@@ -3516,7 +3516,7 @@ function AdminMonthlyLineupPage({ advisors, monthlyLineups, setMonthlyLineups, s
           <div style={{ padding:"12px 16px", background:C.soft, borderBottom:`1px solid ${C.line}` }}>
             <span style={{ fontSize:12, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:0.5 }}>วันในสัปดาห์</span>
           </div>
-          {DAYS.map(({ dow, label, short, sessions:dowSessions }) => {
+          {DAYS.map(({ dow, label, sessions:dowSessions }) => {
             const isActive = selectedDow === dow;
             // Count how many slots are set for this dow
             const setCount = dowSessions.reduce((n, sess) => {
