@@ -2570,7 +2570,7 @@ try {
               {studentCols.map(h=>(
                 <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
                   {h.l}
-                  {h.k && <SortIcon col={h.k} />}
+                  {h.k && renderSortIcon(h.k)}
                 </th>
               ))}
             </tr></thead>
@@ -2628,7 +2628,7 @@ try {
               {advisorCols.map(h=>(
                 <th key={h.l} onClick={h.k ? () => toggleSort(h.k) : undefined} style={{ textAlign:"left", padding:"10px 16px", color:sortCol===h.k?C.accent:C.muted, fontWeight:600, fontSize:11.5, textTransform:"uppercase", letterSpacing:0.4, cursor: h.k ? "pointer" : "default", userSelect:"none" }}>
                   {h.l}
-                  {h.k && <SortIcon col={h.k} />}
+                  {h.k && renderSortIcon(h.k)}
                 </th>
               ))}
             </tr></thead>
