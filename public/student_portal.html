@@ -30,7 +30,7 @@
     <h2>Scanner Unlock</h2>
     <p style="color:#7f8c8d; font-size: 14px;">Enter your 10-digit Student ID to verify your reservation and get the current unlock PIN.</p>
     
-    <input type="text" id="studentId" placeholder="e.g., 6431234567">
+    <input type="text" id="studentId" placeholder="e.g., 6870006132">
     <button id="btnCheck" onclick="checkReservation()">Check Reservation</button>
 
     <div id="errorMsg" class="error"></div>
@@ -48,12 +48,10 @@
     // --- CONFIGURATION ---
     const SUPABASE_URL = 'https://qznrajnkzgqfsgxxdwit.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_pJvv2oNfWpz8U3x-HcyBFA_tdzbQmy7';
-    
-    // This MUST match the secret in the Python app exactly
     const TOTP_SECRET = 'JBSWY3DPEHPK3PXP'; 
     
-    // Initialize Supabase 
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Initialize Supabase correctly without variable shadowing
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let pinInterval = null;
 
@@ -77,7 +75,7 @@
 
         try {
             // 1. Get the Student UUID by their Username (10-digit ID)
-            const { data: student, error: studentError } = await supabase
+            const { data: student, error: studentError } = await supabaseClient
                 .from('students')
                 .select('id, name')
                 .eq('username', username)
@@ -99,7 +97,7 @@
             const currentSlot = `${String(h).padStart(2, '0')}:00-${String(h + 1).padStart(2, '0')}:00`;
 
             // 3. Check for an active reservation for this exact time slot
-            const { data: reservations, error: resError } = await supabase
+            const { data: reservations, error: resError } = await supabaseClient
                 .from('equipment_reservations')
                 .select('*')
                 .eq('student_id', student.id)
