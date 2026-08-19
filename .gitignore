@@ -1,4 +1,4 @@
-﻿# Logs
+# Logs
 logs
 *.log
 npm-debug.log*
@@ -28,6 +28,7 @@ dist-ssr
 /AppSupabase.jsx
 /*.xlsx
 /*.txt
+.env
 /GAS.md
 /fill-overflow-units.js
 /fix-overflow.js
