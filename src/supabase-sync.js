@@ -87,7 +87,7 @@ export const SheetsDB = {
         studentName: r.student_name,
         unitId: r.unit_id,
         date: r.date,
-        session: r.session,
+        session: r.session.split('-')[0],
         patientName: r.patient_name,
         hn: r.hn,
         treatment: r.treatment,
@@ -122,7 +122,7 @@ export const SheetsDB = {
         studentName: r.student_name,
         equipmentId: r.equipment_id,
         date: r.date,
-        timeSlot: r.time_slot,
+        timeSlot: r.time_slot.split('-')[0],
         purpose: r.purpose,
         caseHn: r.case_hn,
         status: r.status,
@@ -166,7 +166,14 @@ export const SheetsDB = {
   },
 
   async updateReservationStatus(reservationId, newStatus) {
-    const { error } = await supabase.from('reservations').update({ status: newStatus }).eq('id', reservationId);
+    let updatePayload = { status: newStatus };
+    if (newStatus === 'cancelled') {
+      const { data: res } = await supabase.from('reservations').select('session').eq('id', reservationId).single();
+      if (res && !res.session.includes('-cancelled')) {
+        updatePayload.session = res.session + '-cancelled-' + Date.now();
+      }
+    }
+    const { error } = await supabase.from('reservations').update(updatePayload).eq('id', reservationId);
     if (error) throw error;
   },
 
@@ -303,7 +310,14 @@ export const SheetsDB = {
   },
 
   async updateEquipmentReservationStatus(id, newStatus) {
-    const { error } = await supabase.from('equipment_reservations').update({ status: newStatus }).eq('id', id);
+    let updatePayload = { status: newStatus };
+    if (newStatus === 'cancelled') {
+      const { data: res } = await supabase.from('equipment_reservations').select('time_slot').eq('id', id).single();
+      if (res && !res.time_slot.includes('-cancelled')) {
+        updatePayload.time_slot = res.time_slot + '-cancelled-' + Date.now();
+      }
+    }
+    const { error } = await supabase.from('equipment_reservations').update(updatePayload).eq('id', id);
     if (error) throw error;
   },
 
