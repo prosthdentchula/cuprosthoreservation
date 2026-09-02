@@ -69,14 +69,27 @@ export const SheetsDB = {
         enrollYear: s.enroll_year,
         active: s.active,
       })),
-      units: (units || []).map(u => ({
-        id: u.id,
-        name: u.name,
-        zone: u.zone,
-        room: u.room,
-        zoneIdx: u.zone_idx,
-        status: u.status,
-      })),
+      units: (units || []).map(u => {
+        const isOv = u.id >= 25 && u.id <= 48;
+        let { name, zone, room, zone_idx: zoneIdx } = u;
+        if (isOv) {
+          const i = u.id - 25;
+          zoneIdx = Math.floor(i / 8);
+          const zLabel = ["A", "B", "C"][zoneIdx];
+          name = `Unit ${zLabel}-OV${(i % 8) + 1}`;
+          zone = zLabel;
+          room = `Zone ${zLabel}`;
+        }
+        return {
+          id: u.id,
+          name,
+          zone,
+          room,
+          zoneIdx,
+          status: u.status,
+          overflow: isOv,
+        };
+      }),
       sessionAdvisors: (sessionAdvisors || []).reduce((map, sa) => {
         map[`${sa.date}__${sa.session}`] = [sa.zone_a_id || "", sa.zone_b_id || "", sa.zone_c_id || ""];
         return map;
