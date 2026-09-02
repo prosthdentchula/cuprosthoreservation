@@ -183,9 +183,9 @@ export const SheetsDB = {
       id,
       date,
       session,
-      zone_a_id: zoneAId,
-      zone_b_id: zoneBId,
-      zone_c_id: zoneCId,
+      zone_a_id: zoneAId || null,
+      zone_b_id: zoneBId || null,
+      zone_c_id: zoneCId || null,
       notes
     }], { onConflict: 'date,session' });
     if (error) throw error;
