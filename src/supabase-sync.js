@@ -162,6 +162,18 @@ export const SheetsDB = {
       added_by_admin: res.addedByAdmin,
       created_at: res.createdAt
     }]);
+
+    // Log the outcome (whether it failed or succeeded)
+    await supabase.from('booking_attempts_log').insert([{
+      student_id: res.studentId,
+      student_name: res.studentName,
+      unit_id: res.unitId,
+      date: res.date,
+      session: res.session,
+      status: error ? 'Failed' : 'Success',
+      error_details: error ? error.message : null
+    }]);
+
     if (error) {
       if (error.code === '23505') throw new Error("ขออภัย! ยูนิตนี้ถูกจองไปแล้วในเสี้ยววินาทีที่ผ่านมา โปรดเลือกยูนิตอื่น");
       throw error;
