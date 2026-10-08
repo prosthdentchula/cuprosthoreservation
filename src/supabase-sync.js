@@ -33,7 +33,8 @@ export const SheetsDB = {
       { data: monthlyLineups },
       { data: equipment },
       { data: equipmentReservations },
-      { data: reservations }
+      { data: reservations },
+      { data: printJobs }
     ] = await Promise.all([
       fetchAll('advisors'),
       fetchAll('students'),
@@ -43,7 +44,8 @@ export const SheetsDB = {
       fetchAll('monthly_lineups'),
       fetchAll('equipment'),
       fetchAll('equipment_reservations'),
-      fetchAll('reservations')
+      fetchAll('reservations'),
+      fetchAll('print_jobs').catch(() => ({ data: [] }))
     ]);
 
     // Map Supabase rows to match the old format expected by App.jsx
@@ -110,6 +112,19 @@ export const SheetsDB = {
         isGhost: r.is_ghost,
         inheritUnit: r.inherit_unit,
         addedByAdmin: r.added_by_admin,
+      })),
+      printJobs: (printJobs || []).map(p => ({
+        id: p.id,
+        studentId: p.student_id,
+        studentName: p.student_name,
+        patientName: p.patient_name,
+        hn: p.hn,
+        jobDesc: p.job_desc,
+        advisorId: p.advisor_id,
+        material: p.material,
+        targetDate: p.target_date,
+        status: p.status,
+        createdAt: p.created_at,
       })),
       admins: (admins || []),
       monthlyLineups: (monthlyLineups || []).reduce((acc, m) => {
@@ -388,5 +403,38 @@ export const SheetsDB = {
       afternoon_c: afternoonIds[2] || ""
     }], { onConflict: 'month_key,dow' });
     if (error) throw error;
+  },
+
+  async writePrintJob(job) {
+    // Gracefully handle if table doesn't exist yet
+    const { error } = await supabase.from('print_jobs').insert([{
+      id: job.id,
+      student_id: job.studentId,
+      student_name: job.studentName,
+      patient_name: job.patientName,
+      hn: job.hn,
+      job_desc: job.jobDesc,
+      advisor_id: job.advisorId,
+      material: job.material,
+      target_date: job.targetDate,
+      status: job.status,
+      created_at: job.createdAt
+    }]);
+    if (error) {
+      if (error.code === '42P01') {
+        console.warn('print_jobs table does not exist, falling back to local only');
+        return { success: true };
+      }
+      throw error;
+    }
+    return { success: true };
+  },
+
+  async updatePrintJobStatus(id, newStatus) {
+    const { error } = await supabase.from('print_jobs').update({ status: newStatus }).eq('id', id);
+    if (error) {
+      if (error.code === '42P01') return { success: true };
+      throw error;
+    }
   }
 };
