@@ -3686,6 +3686,7 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
         { k: "browse", i: "⊞", l: "จองยูนิต" },
         { k: "overview", i: "◎", l: "ภาพรวมยูนิต" },
         { k: "equip-browse", i: "🔬", l: "จองอุปกรณ์" },
+        { k: "print-jobs", i: "🖨️", l: "ปริ้นท์ชิ้นงาน" },
         { k: "my-res", i: "📋", l: "การจองของฉัน" }
       ]
     : user.role === "advisor"
@@ -3703,6 +3704,8 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
         { isHeader: true, l: "อุปกรณ์ (Equipment)" },
         { k: "admin-equipment", i: "🔬", l: "จัดการอุปกรณ์" },
         { k: "admin-equip-res", i: "📋", l: "การจองอุปกรณ์" },
+        { isHeader: true, l: "ปริ้นท์ชิ้นงาน (3D Print)" },
+        { k: "admin-print-jobs", i: "🖨️", l: "รายการปริ้นท์" },
         { isHeader: true, l: "ระบบและบุคลากร" },
         { k: "admin-session-advisors", i: "👨‍⚕️", l: "อาจารย์นิเทศ" },
         { k: "admin-monthly-lineup", i: "📅", l: "ตารางเวร" },
@@ -3889,6 +3892,178 @@ function Sidebar({ user, page, setPage, onLogout, onRefresh, onChangePassword })
 
 /* ═══ APP ROOT ══════════════════════════════════════════════════════════════════ */
 
+/* ═══ 3D PRINT JOBS (STUDENT) ════════════════════════════════════════════════════ */
+function StudentPrintJobsPage({ user, printJobs, advisors, onRegister, onCancel }) {
+  const [patientName, setPatientName] = useState("");
+  const [hn, setHn] = useState("");
+  const [jobDesc, setJobDesc] = useState("");
+  const [advisorId, setAdvisorId] = useState("");
+  const [material, setMaterial] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Calc target Wednesday
+  const now = new Date();
+  const dow = now.getDay();
+  let daysUntilWed = (3 - dow + 7) % 7;
+  if (dow === 3 && now.getHours() >= 11) daysUntilWed = 7;
+  const target = new Date(now);
+  target.setDate(now.getDate() + daysUntilWed);
+  const targetDateStr = getLocalISOStatic(target);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    await onRegister({ patientName, hn, jobDesc, advisorId, material, targetDate: targetDateStr });
+    setIsSubmitting(false);
+    setPatientName(""); setHn(""); setJobDesc(""); setAdvisorId(""); setMaterial("");
+  };
+
+  const myJobs = printJobs.filter(j => j.studentId === user.id && j.targetDate === targetDateStr);
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto" }}>
+      <h2 style={{ fontSize: 24, marginBottom: 20 }}>ลงชื่อปริ้นท์ชิ้นงาน (3D Print)</h2>
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>รอบปริ้นท์ถัดไป: {displayDate(targetDateStr)}</h3>
+        <p style={{ color: C.muted, fontSize: 14 }}>ปิดรับลงชื่อเวลา 11:00 น. ของวันพุธ</p>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 15, marginTop: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15 }}>
+            <div>
+              <label style={lblStyle}>ชื่อผู้ป่วย</label>
+              <input style={inpStyle} required value={patientName} onChange={e=>setPatientName(e.target.value)} />
+            </div>
+            <div>
+              <label style={lblStyle}>HN</label>
+              <input style={inpStyle} required value={hn} onChange={e=>setHn(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label style={lblStyle}>รายละเอียดชิ้นงาน (Print Job)</label>
+            <input style={inpStyle} required value={jobDesc} onChange={e=>setJobDesc(e.target.value)} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15 }}>
+            <div>
+              <label style={lblStyle}>อาจารย์ผู้คุม</label>
+              <select style={inpStyle} required value={advisorId} onChange={e=>setAdvisorId(e.target.value)}>
+                <option value="">-- เลือกอาจารย์ --</option>
+                {advisors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lblStyle}>วัสดุที่ใช้ปริ้นท์</label>
+              <input style={inpStyle} required value={material} onChange={e=>setMaterial(e.target.value)} />
+            </div>
+          </div>
+          <button type="submit" disabled={isSubmitting} style={{ ...btnStyle("primary"), alignSelf: "flex-start", marginTop: 10 }}>
+            {isSubmitting ? "กำลังบันทึก..." : "ลงชื่อปริ้นท์งาน"}
+          </button>
+        </form>
+      </div>
+
+      <h3 style={{ fontSize: 18, marginTop: 30, marginBottom: 15 }}>รายการของคุณ (รอบ {displayDate(targetDateStr)})</h3>
+      {myJobs.length === 0 ? <p style={{ color: C.muted }}>ยังไม่มีรายการ</p> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {myJobs.map(job => (
+            <div key={job.id} style={{ ...cardStyle, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{job.patientName} (HN: {job.hn})</div>
+                <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+                  ชิ้นงาน: {job.jobDesc} | วัสดุ: {job.material} | อาจารย์: {advisors.find(a=>a.id===job.advisorId)?.name}
+                </div>
+                <div style={{ marginTop: 8 }}><Badge t={job.status}>{job.status}</Badge></div>
+              </div>
+              {job.status !== "cancelled" && (
+                <button onClick={() => onCancel(job.id)} style={{ ...btnStyle("danger"), padding: "6px 12px", fontSize: 12 }}>ยกเลิก</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ 3D PRINT JOBS (ADMIN) ══════════════════════════════════════════════════════ */
+function AdminPrintJobsPage({ printJobs, advisors }) {
+  const [filterDate, setFilterDate] = useState("");
+  
+  // Default to this week's target date
+  useEffect(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    let daysUntilWed = (3 - dow + 7) % 7;
+    if (dow === 3 && now.getHours() >= 11) daysUntilWed = 7;
+    const target = new Date(now);
+    target.setDate(now.getDate() + daysUntilWed);
+    setFilterDate(getLocalISOStatic(target));
+  }, []);
+
+  const filteredJobs = printJobs.filter(j => j.targetDate === filterDate);
+
+  const exportExcel = () => {
+    const data = filteredJobs.map(j => ({
+      "วันที่ส่ง": displayDate(j.createdAt),
+      "ชื่อนิสิต": j.studentName,
+      "ชื่อผู้ป่วย": j.patientName,
+      "HN": j.hn,
+      "รายละเอียดงาน": j.jobDesc,
+      "วัสดุ": j.material,
+      "อาจารย์": advisors.find(a=>a.id===j.advisorId)?.name || j.advisorId,
+      "สถานะ": j.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "PrintJobs");
+    XLSX.writeFile(wb, `PrintJobs_${filterDate}.xlsx`);
+  };
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontSize: 24, margin: 0 }}>รายการปริ้นท์ชิ้นงาน</h2>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <label style={{ fontSize: 14, fontWeight: 500 }}>รอบวันที่:</label>
+          <input type="date" style={{ ...inpStyle, width: 160 }} value={filterDate} onChange={e=>setFilterDate(e.target.value)} />
+          <button onClick={exportExcel} style={btnStyle("ghost")}>⬇ Export Excel</button>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: C.soft, borderBottom: `1px solid ${C.line}`, textAlign: "left" }}>
+              <th style={{ padding: "12px 16px", fontWeight: 600 }}>นิสิต</th>
+              <th style={{ padding: "12px 16px", fontWeight: 600 }}>ผู้ป่วย (HN)</th>
+              <th style={{ padding: "12px 16px", fontWeight: 600 }}>ชิ้นงาน / วัสดุ</th>
+              <th style={{ padding: "12px 16px", fontWeight: 600 }}>อาจารย์</th>
+              <th style={{ padding: "12px 16px", fontWeight: 600 }}>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredJobs.length === 0 ? (
+              <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: C.muted }}>ไม่พบข้อมูลในรอบนี้</td></tr>
+            ) : filteredJobs.map(job => (
+              <tr key={job.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td style={{ padding: "12px 16px" }}>{job.studentName}</td>
+                <td style={{ padding: "12px 16px" }}>
+                  <div>{job.patientName}</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>HN: {job.hn}</div>
+                </td>
+                <td style={{ padding: "12px 16px" }}>
+                  <div>{job.jobDesc}</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{job.material}</div>
+                </td>
+                <td style={{ padding: "12px 16px" }}>{advisors.find(a=>a.id===job.advisorId)?.name}</td>
+                <td style={{ padding: "12px 16px" }}><Badge t={job.status}>{job.status}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser]                   = useState(()=>loadSession());
   const [page, setPage]                   = useState(()=>{ const u=loadSession(); return u?(u.role==="admin"?"admin-overview":"browse"):"browse"; });
@@ -3904,6 +4079,7 @@ export default function App() {
   const [monthlyLineups, setMonthlyLineups] = useState({});
   const [equipment, setEquipment]                     = useState(SEED_EQUIPMENT);
   const [equipmentReservations, setEquipmentReservations] = useState([]);
+  const [printJobs, setPrintJobs] = useState([]);
   const [toast, setToast]                 = useState(null);
   // Prevents duplicate concurrent syncAll calls (which cause GAS LockService to block for 30s)
   const syncInFlight = useRef(false);
@@ -3957,6 +4133,7 @@ export default function App() {
     setUnits(finalUnits);
 setEquipment(data.equipment && data.equipment.length ? data.equipment : SEED_EQUIPMENT);
     setEquipmentReservations(data.equipmentReservations || []);
+    setPrintJobs(data.printJobs || []);
     // ... rest of the function (auto-archive, etc.)
 
       // ── Auto-archive reservations older than 18 months ────────────────────
@@ -4134,6 +4311,40 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
     }
   };
 
+  const registerPrintJob = async (details) => {
+    const id = `PJ-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+    const job = {
+      id,
+      studentId: user.id,
+      studentName: user.name,
+      ...details,
+      status: "pending",
+      createdAt: getLocalISOStatic(new Date())
+    };
+    
+    setPrintJobs(p => [...p, job]);
+    notify(`ลงชื่อปริ้นท์งาน ${job.patientName} สำเร็จ`);
+    
+    try {
+      await SheetsDB.writePrintJob(job);
+    } catch (error) {
+      setPrintJobs(p => p.filter(j => j.id !== id));
+      notify(`⚠ ไม่สามารถลงชื่อได้: ${error.message}`, true);
+    }
+  };
+
+  const cancelPrintJob = async (id) => {
+    const prev = [...printJobs];
+    setPrintJobs(p => p.map(j => j.id === id ? { ...j, status: "cancelled" } : j));
+    notify("ยกเลิกการลงชื่อเรียบร้อยแล้ว");
+    try {
+      await SheetsDB.updatePrintJobStatus(id, "cancelled");
+    } catch (error) {
+      setPrintJobs(prev);
+      notify(`⚠ ยกเลิกไม่สำเร็จ: ${error.message}`, true);
+    }
+  };
+
   const updateEquipmentResStatus = async (idOrIds, status) => {
     const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
     const prev = [...equipmentReservations];
@@ -4218,6 +4429,8 @@ const bookEquipment = async ({ equipment: eq, date, timeSlot, duration = 1, purp
         {page==="admin-units"       && <AdminUnitsPage units={units} setUnits={setUnits} advisors={advisors} sessionAdvisors={sessionAdvisors} reservations={reservations} notify={notify} />}
         {page==="admin-res"         && <AdminReservationsPage reservations={reservations} units={units} students={students} onUpdateStatus={updateStatus} onAdminBook={adminBook} />}
         {page==="admin-summary"     && <AdminStudentSummaryPage reservations={reservations} students={students} />}
+        {page==="print-jobs"        && <StudentPrintJobsPage user={user} printJobs={printJobs} advisors={advisors} onRegister={registerPrintJob} onCancel={cancelPrintJob} />}
+        {page==="admin-print-jobs"  && <AdminPrintJobsPage printJobs={printJobs} advisors={advisors} />}
       </main>
       {loading && <LoadingOverlay text="กำลังโหลดข้อมูลจาก Google Sheets…" />}
       {toast   && <Toast msg={toast} onClose={()=>setToast(null)} />}
